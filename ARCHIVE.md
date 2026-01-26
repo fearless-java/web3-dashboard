@@ -72,6 +72,49 @@ src/
 
 ---
 
+## 存檔 #006 - 分層架構重構完成（最終版）
+**提交哈希**: `待提交`  
+**日期**: 2026-01-26  
+**開發進度**:
+- ✅ 完成項目結構重構，採用清晰的分層架構
+- ✅ 創建 `src/types/assets.ts` - 統一管理 Asset 相關類型定義
+- ✅ 創建 `src/services/portfolio.ts` - 純業務邏輯，只保留 Alchemy 核心查詢功能
+- ✅ 創建 `src/services/price.ts` - 價格服務模塊（為未來價格計算功能預留）
+- ✅ 重構 `src/hooks/usePortfolio.ts` - 合併 portfolio-queries.ts 邏輯，統一 React Query 封裝
+- ✅ 移動 `src/config/dashboard.config.ts` - 配置統一管理
+- ✅ 更新所有文件引用路徑為 `@/` 別名
+- ✅ 刪除舊文件，清理項目結構
+- ✅ 改進 ERC20 代幣 Logo 獲取邏輯，添加 DefiLlama 兜底機制
+
+**項目結構**:
+```
+src/
+├── types/
+│   └── assets.ts          # Asset 相關類型定義
+├── services/
+│   ├── portfolio.ts       # Alchemy 核心業務邏輯（純服務層）
+│   └── price.ts           # 價格服務（未來擴展）
+├── hooks/
+│   └── usePortfolio.ts    # React Query 封裝 Hook（合併查詢邏輯）
+└── config/
+    └── dashboard.config.ts # Dashboard 配置
+```
+
+**技術改進**:
+- 分層架構：類型定義、服務層、Hook 層、配置層清晰分離
+- 代碼組織：業務邏輯與 React 邏輯分離，易於測試和維護
+- Logo 兜底：優先使用 Alchemy，缺失時自動使用 DefiLlama CDN
+- 統一導入：所有文件使用 `@/` 別名，路徑更清晰
+
+**功能特性**:
+- 多鏈資產查詢（8 條鏈：Ethereum, Arbitrum, Optimism, Base, Polygon, Avalanche, BNB Chain, Sepolia）
+- DefiLlama 圖標 CDN 兜底機制（解決 Alchemy 元數據缺失問題）
+- TanStack Query 數據緩存和自動刷新
+- RainbowKit 錢包連接集成
+- TokenBalanceType.DEFAULT_TOKENS 優化查詢
+
+---
+
 ## 使用說明
 
 ### 回檔到指定存檔
