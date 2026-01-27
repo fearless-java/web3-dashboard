@@ -115,6 +115,26 @@ src/
 
 ---
 
+## 存檔 #007 - 交易記錄和聚合投資組合功能
+**提交哈希**: `a7b2215`  
+**日期**: 2026-01-27  
+**開發進度**:
+- ✅ 新增交易服務和相關類型定義
+- ✅ 新增聚合投資組合查詢功能
+- ✅ 更新配置文件和相關服務
+- ✅ 新增測試頁面和文檔
+
+**主要變更**:
+- 新增 `src/services/transactions.ts` - 交易記錄服務
+- 新增 `src/hooks/useTransactions.ts` - 交易查詢 Hook
+- 新增 `src/hooks/useAggregatedPortfolio.ts` - 聚合投資組合 Hook
+- 新增 `src/types/transactions.ts` - 交易類型定義
+- 新增 `src/stores/currency-store.ts` - 貨幣狀態管理
+- 新增 `src/utils/asset-utils.ts` - 資產工具函數
+- 新增測試頁面和使用文檔
+
+---
+
 ## 使用說明
 
 ### 回檔到指定存檔
@@ -142,4 +162,4 @@ git diff <提交哈希>^..<提交哈希>
 
 ---
 
-**最後更新**: 2026-01-26
+**最後更新**: 2026-01-27
