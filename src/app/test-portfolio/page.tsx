@@ -1,21 +1,39 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { usePortfolio, Asset } from '@/hooks/usePortfolio';
-import { getNetworkConfig } from '@/config/dashboard.config';
+import { getNetworkConfig, dashboardConfig } from '@/config/dashboard.config';
+import { useCurrencyStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/currency-store';
 
 export default function TestPortfolioPage() {
+  
+  useEffect(() => {
+    console.log('🔍 [TestPortfolioPage] 環境檢查:');
+    console.log('  - NODE_ENV:', process.env.NODE_ENV);
+    console.log('  - 日誌啟用:', dashboardConfig.logging.enabled);
+    console.log('  - 日誌級別:', dashboardConfig.logging.level);
+    console.log('  - 價格刷新間隔:', dashboardConfig.refresh.price, 'ms');
+  }, []);
   const [address, setAddress] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [testAddress, setTestAddress] = useState('');
 
-  // 使用 hook
-  const { data, isLoading, error, refetch } = usePortfolio(
+  const { currency, setCurrency } = useCurrencyStore();
+
+  const {
+    data,
+    totalValue,
+    isLoading,
+    isPriceLoading,
+    error,
+    refetch,
+    portfolioStatus,
+    pricesStatus,
+  } = usePortfolio(
     testAddress || undefined,
     isConnected && !!testAddress
   );
 
-  // 一些测试地址示例
   const testAddresses = [
     { name: 'Vitalik Buterin', address: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
     { name: 'Binance Hot Wallet', address: '0x3f5CE5FBFe3E9af3971dD833D26bA9b5C936f0bE' },
@@ -34,7 +52,6 @@ export default function TestPortfolioPage() {
     setIsConnected(false);
   };
 
-  // 按链分组资产
   const assetsByChain = data.reduce((acc, asset) => {
     const chainId = asset.chainId;
     if (!acc[chainId]) {
@@ -44,7 +61,6 @@ export default function TestPortfolioPage() {
     return acc;
   }, {} as Record<number, Asset[]>);
 
-  // 计算总价值（这里只是示例，实际需要价格数据）
   const totalAssets = data.length;
   const totalChains = Object.keys(assetsByChain).length;
 
@@ -55,14 +71,30 @@ export default function TestPortfolioPage() {
           usePortfolio Hook 测试页面
         </h1>
 
-        {/* 控制面板 */}
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-lg p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
             测试控制
           </h2>
 
           <div className="space-y-4">
-            {/* 地址输入 */}
+            
+            <div>
+              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+                选择法币
+              </label>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as Currency)}
+                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {(Object.keys(CURRENCY_NAMES) as Currency[]).map((curr) => (
+                  <option key={curr} value={curr}>
+                    {CURRENCY_NAMES[curr]} ({curr}) {CURRENCY_SYMBOLS[curr]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
             <div>
               <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
                 钱包地址
@@ -101,7 +133,6 @@ export default function TestPortfolioPage() {
               </div>
             </div>
 
-            {/* 连接状态 */}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2">
                 <input
@@ -116,7 +147,6 @@ export default function TestPortfolioPage() {
               </label>
             </div>
 
-            {/* 快速测试地址 */}
             <div>
               <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
                 快速测试地址
@@ -136,16 +166,53 @@ export default function TestPortfolioPage() {
           </div>
         </div>
 
-        {/* 状态显示 */}
+        {testAddress && data.length > 0 && (
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg shadow-lg p-6 mb-8 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm opacity-90 mb-1">总资产价值</div>
+                <div className="text-4xl font-bold">
+                  {isPriceLoading ? (
+                    <span className="text-2xl">加载中...</span>
+                  ) : (
+                    <>
+                      {CURRENCY_SYMBOLS[currency]}
+                      {totalValue.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </>
+                  )}
+                </div>
+                <div className="text-sm opacity-75 mt-1">
+                  {totalAssets} 个资产 · {totalChains} 条链
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm opacity-90">法币</div>
+                <div className="text-2xl font-semibold">
+                  {CURRENCY_NAMES[currency]}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-lg p-6 mb-8">
           <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
             状态信息
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <div className="text-sm text-zinc-600 dark:text-zinc-400">加载状态</div>
+              <div className="text-sm text-zinc-600 dark:text-zinc-400">资产加载</div>
               <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                {isLoading ? '加载中...' : '就绪'}
+                {portfolioStatus.isLoading ? '加载中' : portfolioStatus.isSuccess ? '✓ 完成' : '等待'}
+              </div>
+            </div>
+            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="text-sm text-zinc-600 dark:text-zinc-400">价格加载</div>
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                {pricesStatus.isLoading ? '加载中' : pricesStatus.isSuccess ? '✓ 完成' : '等待'}
               </div>
             </div>
             <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
@@ -154,16 +221,16 @@ export default function TestPortfolioPage() {
                 {totalAssets}
               </div>
             </div>
-            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
               <div className="text-sm text-zinc-600 dark:text-zinc-400">链数量</div>
-              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+              <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
                 {totalChains}
               </div>
             </div>
             <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
               <div className="text-sm text-zinc-600 dark:text-zinc-400">错误状态</div>
               <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                {error ? '有错误' : '正常'}
+                {error ? '✗ 错误' : '✓ 正常'}
               </div>
             </div>
           </div>
@@ -174,7 +241,6 @@ export default function TestPortfolioPage() {
           )}
         </div>
 
-        {/* 资产列表 */}
         {testAddress && (
           <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-lg p-6">
             <h2 className="text-xl font-semibold mb-4 text-black dark:text-zinc-50">
@@ -252,12 +318,45 @@ export default function TestPortfolioPage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-lg text-black dark:text-zinc-50">
+                              
+                              <div className="font-bold text-lg text-black dark:text-zinc-50 mb-1">
                                 {parseFloat(asset.formatted).toLocaleString(undefined, {
                                   maximumFractionDigits: 6,
-                                })}
+                                })}{' '}
+                                <span className="text-sm font-normal text-zinc-500 dark:text-zinc-400">
+                                  {asset.symbol}
+                                </span>
                               </div>
-                              <div className="text-xs text-zinc-500 dark:text-zinc-500">
+
+                              {isPriceLoading ? (
+                                <div className="text-xs text-zinc-400 dark:text-zinc-500">
+                                  价格加载中...
+                                </div>
+                              ) : asset.price !== undefined ? (
+                                <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                  {CURRENCY_SYMBOLS[currency]}
+                                  {asset.price.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 6,
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-zinc-400 dark:text-zinc-500">
+                                  价格不可用
+                                </div>
+                              )}
+
+                              {asset.value !== undefined && (
+                                <div className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-1">
+                                  {CURRENCY_SYMBOLS[currency]}
+                                  {asset.value.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </div>
+                              )}
+
+                              <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-1">
                                 {asset.decimals} decimals
                               </div>
                             </div>
@@ -272,7 +371,6 @@ export default function TestPortfolioPage() {
           </div>
         )}
 
-        {/* 原始数据（调试用） */}
         {process.env.NODE_ENV === 'development' && data.length > 0 && (
           <details className="mt-8 bg-white dark:bg-zinc-900 rounded-lg shadow-lg p-6">
             <summary className="cursor-pointer text-lg font-semibold text-black dark:text-zinc-50 mb-4">
