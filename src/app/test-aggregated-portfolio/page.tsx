@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAggregatedPortfolio } from '@/hooks/useAggregatedPortfolio';
-import { getNetworkConfig, dashboardConfig } from '@/config/dashboard.config';
-import { useCurrencyStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/currency-store';
+import { dashboardConfig } from '@/config/dashboard.config';
+import { getNetworkConfig } from '@/utils/network';
+import { useSettingsStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/settings-store';
 import type { GroupedAsset, Asset } from '@/types/assets';
 
 export default function TestAggregatedPortfolioPage() {
@@ -20,7 +21,7 @@ export default function TestAggregatedPortfolioPage() {
   const [viewMode, setViewMode] = useState<'aggregated' | 'raw' | 'compare'>('aggregated');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
 
-  const { currency, setCurrency } = useCurrencyStore();
+  const { currency, setCurrency } = useSettingsStore();
 
   const {
     aggregatedData,

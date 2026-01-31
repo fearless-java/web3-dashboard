@@ -3,7 +3,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import { fetchPortfolio } from '@/services/portfolio';
 import { fetchTokenPrices } from '@/services/price';
 import { dashboardConfig } from '@/config/dashboard.config';
-import { useCurrencyStore, type Currency } from '@/stores/currency-store';
+import { useSettingsStore, type Currency } from '@/stores/settings-store';
 import type { Asset } from '@/types/assets';
 
 export function getPortfolioQueryKey(address?: string) {
@@ -30,7 +30,7 @@ function usePortfolioQuery(
     enabled: isConnected && !!address && address.length > 0, 
     staleTime: cache.enabled ? cache.staleTime : 0, 
     gcTime: cache.enabled ? cache.gcTime : 0, 
-    refetchInterval: refresh.token, 
+    refetchInterval: refresh.portfolio, 
     refetchOnWindowFocus: cache.refetchOnWindowFocus, 
     refetchOnReconnect: cache.refetchOnReconnect, 
     retry: retry.maxRetries, 
@@ -114,7 +114,7 @@ function usePricesQuery(
 
 export const usePortfolio = (address?: string, isConnected?: boolean) => {
   
-  const currency = useCurrencyStore((state) => state.currency);
+  const currency = useSettingsStore((state) => state.currency);
 
   const portfolioQuery = usePortfolioQuery(address, isConnected ?? false);
 

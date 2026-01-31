@@ -1,5 +1,5 @@
 import type { Asset } from '@/types/assets';
-import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/config/dashboard.config';
+import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/constants/chains';
 import type { Currency } from '@/stores/currency-store';
 
 // DefiLlama API 基础URL

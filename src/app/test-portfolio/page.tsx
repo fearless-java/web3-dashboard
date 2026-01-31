@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { usePortfolio, Asset } from '@/hooks/usePortfolio';
-import { getNetworkConfig, dashboardConfig } from '@/config/dashboard.config';
-import { useCurrencyStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/currency-store';
+import { dashboardConfig } from '@/config/dashboard.config';
+import { getNetworkConfig } from '@/utils/network';
+import { useSettingsStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/settings-store';
 
 export default function TestPortfolioPage() {
   
@@ -18,7 +19,7 @@ export default function TestPortfolioPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [testAddress, setTestAddress] = useState('');
 
-  const { currency, setCurrency } = useCurrencyStore();
+  const { currency, setCurrency } = useSettingsStore();
 
   const {
     data,

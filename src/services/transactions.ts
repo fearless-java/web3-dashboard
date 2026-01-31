@@ -1,10 +1,7 @@
-import { isAddress, formatUnits, fromHex, parseUnits } from 'viem';
+import { isAddress, formatUnits, fromHex, parseUnits, getAddress } from 'viem';
 import { Alchemy, AssetTransfersCategory, TokenBalanceType } from 'alchemy-sdk';
-import {
-  dashboardConfig,
-  getAlchemyNetworkEnum,
-  getNetworkIconUrl,
-} from '@/config/dashboard.config';
+import { dashboardConfig } from '@/config/dashboard.config';
+import { getAlchemyNetworkEnum, getNativeTokenLogo, getTrustWalletChainName } from '@/utils/network';
 import type {
   Transaction,
   ChainTransactionResult,
@@ -159,17 +156,34 @@ async function fetchChainTransactions(
 
         let logo: string | undefined;
         if (isNative) {
-          
-          logo = getNetworkIconUrl(chainId);
+          // 原生代币：使用高清 Logo 策略
+          logo = getNativeTokenLogo(chainId);
         } else {
-          
+          // ERC20 代币：三级 Fallback 策略
           const tokenAddressLower = tokenAddress.toLowerCase();
-          const metadata = tokenMetadataMap?.get(tokenAddressLower);
-          if (metadata?.logo && metadata.logo.trim() !== '') {
-            logo = metadata.logo;
+          const trustWalletChain = getTrustWalletChainName(chainId);
+          
+          if (trustWalletChain) {
+            // Tier 1: Trust Wallet Assets (高清首选)
+            try {
+              const checksumAddress = getAddress(tokenAddress);
+              logo = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${trustWalletChain}/assets/${checksumAddress}/logo.png`;
+            } catch {
+              // 如果地址转换失败，降级到 Tier 2
+              const metadata = tokenMetadataMap?.get(tokenAddressLower);
+              logo = (metadata?.logo && metadata.logo.trim() !== '')
+                ? metadata.logo
+                : `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            }
           } else {
-            
-            logo = `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            // Tier 2: Alchemy 元数据
+            const metadata = tokenMetadataMap?.get(tokenAddressLower);
+            if (metadata?.logo && metadata.logo.trim() !== '') {
+              logo = metadata.logo;
+            } else {
+              // Tier 3: DefiLlama 兜底
+              logo = `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            }
           }
         }
 
@@ -257,17 +271,34 @@ async function fetchChainTransactions(
 
         let logo: string | undefined;
         if (isNative) {
-          
-          logo = getNetworkIconUrl(chainId);
+          // 原生代币：使用高清 Logo 策略
+          logo = getNativeTokenLogo(chainId);
         } else {
-          
+          // ERC20 代币：三级 Fallback 策略
           const tokenAddressLower = tokenAddress.toLowerCase();
-          const metadata = tokenMetadataMap?.get(tokenAddressLower);
-          if (metadata?.logo && metadata.logo.trim() !== '') {
-            logo = metadata.logo;
+          const trustWalletChain = getTrustWalletChainName(chainId);
+          
+          if (trustWalletChain) {
+            // Tier 1: Trust Wallet Assets (高清首选)
+            try {
+              const checksumAddress = getAddress(tokenAddress);
+              logo = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${trustWalletChain}/assets/${checksumAddress}/logo.png`;
+            } catch {
+              // 如果地址转换失败，降级到 Tier 2
+              const metadata = tokenMetadataMap?.get(tokenAddressLower);
+              logo = (metadata?.logo && metadata.logo.trim() !== '')
+                ? metadata.logo
+                : `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            }
           } else {
-            
-            logo = `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            // Tier 2: Alchemy 元数据
+            const metadata = tokenMetadataMap?.get(tokenAddressLower);
+            if (metadata?.logo && metadata.logo.trim() !== '') {
+              logo = metadata.logo;
+            } else {
+              // Tier 3: DefiLlama 兜底
+              logo = `https://icons.llamao.fi/icons/tokens/${chainId}/${tokenAddressLower}`;
+            }
           }
         }
 

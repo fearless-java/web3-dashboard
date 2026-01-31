@@ -3,7 +3,8 @@
 import { ReactNode, useMemo } from 'react';
 import { WagmiProvider, http } from 'wagmi';
 import { RainbowKitProvider, getDefaultConfig } from '@rainbow-me/rainbowkit';
-import { getEnabledNetworks, dashboardConfig, getRpcUrl } from '@/config/dashboard.config';
+import { dashboardConfig } from '@/config/dashboard.config';
+import { getEnabledNetworks, getRpcUrl } from '@/utils/network';
 import '@rainbow-me/rainbowkit/styles.css';
 
 export function WalletProvider({ children }: { children: ReactNode }) {

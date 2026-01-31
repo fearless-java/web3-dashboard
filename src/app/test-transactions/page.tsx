@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTransactions, Transaction, TransactionType } from '@/hooks/useTransactions';
-import { getNetworkConfig, dashboardConfig } from '@/config/dashboard.config';
+import { dashboardConfig } from '@/config/dashboard.config';
+import { getNetworkConfig } from '@/utils/network';
 
 export default function TestTransactionsPage() {
   
