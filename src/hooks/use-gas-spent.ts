@@ -1,6 +1,16 @@
-import { useQuery, UseQueryResult } from '@tanstack/react-query';
-import { fetchTotalGasSpent } from '@/services/gas';
+import { useQuery } from '@tanstack/react-query';
 import { dashboardConfig } from '@/config/dashboard.config';
+
+/** 通过服务端 API 获取 Gas 消耗（使用 ETHERSCAN_API_KEY，不暴露到前端） */
+async function fetchGasSpentFromApi(address: string): Promise<string> {
+  const res = await fetch(
+    `/api/gas-spent?address=${encodeURIComponent(address)}`,
+    { cache: 'no-store' }
+  );
+  if (!res.ok) return '0';
+  const json = await res.json();
+  return typeof json.totalGasSpent === 'string' ? json.totalGasSpent : '0';
+}
 
 /**
  * Query Key 生成器
@@ -21,20 +31,12 @@ export function getGasSpentQueryKey(address?: string) {
  * @param address 用户钱包地址
  * @returns React Query 结果对象
  */
-export function useGasSpent(
-  address?: string
-): UseQueryResult<string, Error> & {
-  totalGasSpent: string;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-} {
+export function useGasSpent(address?: string) {
   const { cache, retry } = dashboardConfig;
 
-  // 配置 React Query
   const query = useQuery({
     queryKey: getGasSpentQueryKey(address),
-    queryFn: () => fetchTotalGasSpent(address!),
+    queryFn: () => fetchGasSpentFromApi(address!),
     
     // 只有当地址存在时才启用查询
     enabled: !!address && address.length > 0,
@@ -60,12 +62,8 @@ export function useGasSpent(
     refetchOnReconnect: cache.refetchOnReconnect,
   });
 
-  // 返回增强的查询结果
   return {
     ...query,
     totalGasSpent: query.data ?? '0',
-    isLoading: query.isLoading,
-    isError: query.isError,
-    isSuccess: query.isSuccess,
   };
 }

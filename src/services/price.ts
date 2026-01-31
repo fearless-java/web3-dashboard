@@ -1,6 +1,5 @@
 import type { Asset } from '@/types/assets';
 import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/constants/chains';
-import type { Currency } from '@/stores/currency-store';
 
 // DefiLlama API 基础URL
 const DEFILLAMA_API_BASE = 'https://coins.llama.fi';
@@ -105,35 +104,14 @@ async function fetchTokenPricesBatch(
   }
 }
 
-async function getExchangeRate(targetCurrency: Currency): Promise<number> {
-  
-  if (targetCurrency === 'USD') {
-    return 1;
-  }
-
-  try {
-
-    const exchangeRates: Record<Currency, number> = {
-      USD: 1,
-      CNY: 7.2, 
-      EUR: 0.92,
-      JPY: 150,
-      GBP: 0.79,
-    };
-
-    return exchangeRates[targetCurrency] || 1;
-  } catch (error) {
-    console.error('获取汇率失败:', error);
-    return 1; 
-  }
-}
-
+/**
+ * 获取代币价格（仅美元，DefiLlama 返回即为 USD）
+ */
 export async function fetchTokenPrices(
-  assets: Asset[],
-  currency: Currency = 'USD'
+  assets: Asset[]
 ): Promise<Record<string, number>> {
   const functionStartTime = Date.now();
-  console.log(`[fetchTokenPrices] 开始处理 - 资产数量: ${assets.length}, 法币: ${currency}`);
+  console.log(`[fetchTokenPrices] 开始处理 - 资产数量: ${assets.length}, 法币: USD`);
 
   if (assets.length === 0) {
     console.log(`[fetchTokenPrices] 资产列表为空，直接返回`);
@@ -192,15 +170,11 @@ export async function fetchTokenPrices(
   });
   console.log(`[fetchTokenPrices] 分片结果汇总 - 成功: ${successCount}, 失败: ${failCount}, 总价格数: ${Object.keys(allPrices).length}`);
 
-  const exchangeRate = await getExchangeRate(currency);
-  console.log(`[fetchTokenPrices] 汇率获取 - 法币: ${currency}, 汇率: ${exchangeRate}`);
-
   const assetPrices: Record<string, number> = {};
   assets.forEach((asset) => {
     const llamaKey = assetToKeyMap.get(asset.uniqueId);
     if (llamaKey && allPrices[llamaKey]) {
-      
-      assetPrices[asset.uniqueId] = allPrices[llamaKey] * exchangeRate;
+      assetPrices[asset.uniqueId] = allPrices[llamaKey];
     }
   });
 

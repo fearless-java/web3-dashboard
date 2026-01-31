@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAggregatedPortfolio } from '@/hooks/useAggregatedPortfolio';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { getNetworkConfig } from '@/utils/network';
-import { useSettingsStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/settings-store';
 import type { GroupedAsset, Asset } from '@/types/assets';
 
 export default function TestAggregatedPortfolioPage() {
@@ -20,8 +19,6 @@ export default function TestAggregatedPortfolioPage() {
   const [testAddress, setTestAddress] = useState('');
   const [viewMode, setViewMode] = useState<'aggregated' | 'raw' | 'compare'>('aggregated');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-
-  const { currency, setCurrency } = useSettingsStore();
 
   const {
     aggregatedData,
@@ -132,23 +129,6 @@ export default function TestAggregatedPortfolioPage() {
 
             <div>
               <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
-                選擇法幣
-              </label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {(Object.keys(CURRENCY_NAMES) as Currency[]).map((curr) => (
-                  <option key={curr} value={curr}>
-                    {CURRENCY_NAMES[curr]} ({curr}) {CURRENCY_SYMBOLS[curr]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
                 錢包地址
               </label>
               <div className="flex gap-2">
@@ -228,7 +208,7 @@ export default function TestAggregatedPortfolioPage() {
                     <span className="text-2xl">加載中...</span>
                   ) : (
                     <>
-                      {CURRENCY_SYMBOLS[currency]}
+                      {'$'}
                       {totalValue.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -246,7 +226,7 @@ export default function TestAggregatedPortfolioPage() {
               <div className="text-right">
                 <div className="text-sm opacity-90">法幣</div>
                 <div className="text-2xl font-semibold">
-                  {CURRENCY_NAMES[currency]}
+                  {'USD'}
                 </div>
               </div>
             </div>
@@ -381,7 +361,7 @@ export default function TestAggregatedPortfolioPage() {
                       </div>
                       <div className="text-right">
                         <div className="text-2xl font-bold text-black dark:text-zinc-50 mb-1">
-                          {CURRENCY_SYMBOLS[currency]}
+                          {'$'}
                           {groupedAsset.totalValue.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -394,7 +374,7 @@ export default function TestAggregatedPortfolioPage() {
                           {groupedAsset.symbol}
                         </div>
                         <div className="text-xs text-zinc-500 dark:text-zinc-500 mt-1">
-                          均價: {CURRENCY_SYMBOLS[currency]}
+                          均價: {'$'}
                           {groupedAsset.averagePrice.toLocaleString(undefined, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 6,
@@ -432,7 +412,7 @@ export default function TestAggregatedPortfolioPage() {
                               </div>
                               {asset.value !== undefined && (
                                 <div className="text-xs text-zinc-500 dark:text-zinc-500">
-                                  {CURRENCY_SYMBOLS[currency]}
+                                  {'$'}
                                   {asset.value.toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,
@@ -530,7 +510,7 @@ export default function TestAggregatedPortfolioPage() {
                             </div>
                             {asset.value !== undefined && (
                               <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                                {CURRENCY_SYMBOLS[currency]}
+                                {'$'}
                                 {asset.value.toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
@@ -597,7 +577,7 @@ export default function TestAggregatedPortfolioPage() {
                         </div>
                         <div className="text-right">
                           <div className="font-bold text-lg text-black dark:text-zinc-50">
-                            {CURRENCY_SYMBOLS[currency]}
+                            {'$'}
                             {asset.totalValue.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -610,7 +590,7 @@ export default function TestAggregatedPortfolioPage() {
                             {asset.symbol}
                           </div>
                           <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                            均價: {CURRENCY_SYMBOLS[currency]}
+                            均價: {'$'}
                             {asset.averagePrice.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 6,
@@ -663,7 +643,7 @@ export default function TestAggregatedPortfolioPage() {
                           </div>
                           <div className="text-right">
                             <div className="text-2xl font-bold">
-                              {CURRENCY_SYMBOLS[currency]}
+                              {'$'}
                               {selectedAsset.totalValue.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
@@ -687,7 +667,7 @@ export default function TestAggregatedPortfolioPage() {
                           <div>
                             <div className="font-semibold">平均價格</div>
                             <div>
-                              {CURRENCY_SYMBOLS[currency]}
+                              {'$'}
                               {selectedAsset.averagePrice.toLocaleString(undefined, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 6,
@@ -743,7 +723,7 @@ export default function TestAggregatedPortfolioPage() {
                                 </div>
                                 {asset.value !== undefined && (
                                   <div className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                                    {CURRENCY_SYMBOLS[currency]}
+                                    {'$'}
                                     {asset.value.toLocaleString(undefined, {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 2,
@@ -752,7 +732,7 @@ export default function TestAggregatedPortfolioPage() {
                                 )}
                                 {asset.price !== undefined && (
                                   <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                                    單價: {CURRENCY_SYMBOLS[currency]}
+                                    單價: {'$'}
                                     {asset.price.toLocaleString(undefined, {
                                       minimumFractionDigits: 2,
                                       maximumFractionDigits: 6,

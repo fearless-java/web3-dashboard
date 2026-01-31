@@ -145,7 +145,6 @@ export const dashboardConfig: DashboardConfig = {
   ui: {
     defaultTheme: 'light', // 改为浅色主题作为默认
     defaultThemeColor: 'blue',
-    defaultCurrency: 'USD',
     dateFormat: 'YYYY-MM-DD HH:mm:ss',
     numberFormat: {
       decimals: 18,

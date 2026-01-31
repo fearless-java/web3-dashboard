@@ -4,10 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePortfolio, Asset } from '@/hooks/usePortfolio';
 import { dashboardConfig } from '@/config/dashboard.config';
 import { getNetworkConfig } from '@/utils/network';
-import { useSettingsStore, CURRENCY_SYMBOLS, CURRENCY_NAMES, type Currency } from '@/stores/settings-store';
-
 export default function TestPortfolioPage() {
-  
   useEffect(() => {
     console.log('🔍 [TestPortfolioPage] 環境檢查:');
     console.log('  - NODE_ENV:', process.env.NODE_ENV);
@@ -18,8 +15,6 @@ export default function TestPortfolioPage() {
   const [address, setAddress] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [testAddress, setTestAddress] = useState('');
-
-  const { currency, setCurrency } = useSettingsStore();
 
   const {
     data,
@@ -78,23 +73,6 @@ export default function TestPortfolioPage() {
           </h2>
 
           <div className="space-y-4">
-            
-            <div>
-              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
-                选择法币
-              </label>
-              <select
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value as Currency)}
-                className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {(Object.keys(CURRENCY_NAMES) as Currency[]).map((curr) => (
-                  <option key={curr} value={curr}>
-                    {CURRENCY_NAMES[curr]} ({curr}) {CURRENCY_SYMBOLS[curr]}
-                  </option>
-                ))}
-              </select>
-            </div>
             
             <div>
               <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
@@ -177,7 +155,7 @@ export default function TestPortfolioPage() {
                     <span className="text-2xl">加载中...</span>
                   ) : (
                     <>
-                      {CURRENCY_SYMBOLS[currency]}
+                      {'$'}
                       {totalValue.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
@@ -192,7 +170,7 @@ export default function TestPortfolioPage() {
               <div className="text-right">
                 <div className="text-sm opacity-90">法币</div>
                 <div className="text-2xl font-semibold">
-                  {CURRENCY_NAMES[currency]}
+                  {'USD'}
                 </div>
               </div>
             </div>
@@ -335,7 +313,7 @@ export default function TestPortfolioPage() {
                                 </div>
                               ) : asset.price !== undefined ? (
                                 <div className="text-sm font-semibold text-green-600 dark:text-green-400">
-                                  {CURRENCY_SYMBOLS[currency]}
+                                  {'$'}
                                   {asset.price.toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 6,
@@ -349,7 +327,7 @@ export default function TestPortfolioPage() {
 
                               {asset.value !== undefined && (
                                 <div className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-1">
-                                  {CURRENCY_SYMBOLS[currency]}
+                                  {'$'}
                                   {asset.value.toLocaleString(undefined, {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,

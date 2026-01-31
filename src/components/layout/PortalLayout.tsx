@@ -7,8 +7,10 @@ import { Header } from "./Header";
  * PortalLayout 组件 Props
  */
 interface PortalLayoutProps {
-  /** 子组件 */
+  /** 子组件（主内容区，在 max-w-7xl 容器内） */
   children: React.ReactNode;
+  /** 可选：全屏宽度的二级导航等，与 Header 一样横跨整屏，渲染在 Header 与主内容之间 */
+  subNav?: React.ReactNode;
 }
 
 /**
@@ -18,18 +20,18 @@ interface PortalLayoutProps {
  * 结构：
  * - 根容器：min-h-screen bg-background text-foreground
  * - Header：全屏宽度，内容居中
+ * - subNav（可选）：全屏宽度，与一级导航一致
  * - 主容器：max-w-7xl mx-auto px-4 sm:px-6 lg:px-8
  * - 内容区：在主容器内渲染 children
  */
-export function PortalLayout({ children }: PortalLayoutProps) {
+export function PortalLayout({ children, subNav }: PortalLayoutProps) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* 粘性页眉 - 全屏宽度 */}
       <Header />
 
-      {/* 主容器：居中 + 响应式内边距 */}
+      {subNav != null ? subNav : null}
+
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* 主内容区 */}
         <main className="py-6">{children}</main>
       </div>
     </div>

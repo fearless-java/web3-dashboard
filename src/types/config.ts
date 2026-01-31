@@ -127,7 +127,6 @@ export type DashboardConfig = {
   ui?: {
     defaultTheme: 'light' | 'dark' | 'system';
     defaultThemeColor: 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'cyan';
-    defaultCurrency: 'USD' | 'EUR' | 'CNY' | 'JPY';
     dateFormat: string;
     numberFormat: {
       decimals: number;

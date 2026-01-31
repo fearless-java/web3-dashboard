@@ -39,15 +39,17 @@ export type FetchPortfolioParams = {
 
 /**
  * 分组资产
- * 包含：符号、名称、图标、总价值、总余额、平均价格、所在链id、资产列表
+ * 包含：符号、名称、图标、总价值、总余额、平均价格、所在链id、资产列表、是否测试网（用于净值与列表区分）
  */
 export type GroupedAsset = {
-  symbol: string; 
-  name: string; 
-  logo?: string; 
-  totalValue: number; 
-  totalBalance: string; 
-  averagePrice: number; 
-  chains: number[]; 
-  assets: Asset[]; 
+  symbol: string;
+  name: string;
+  logo?: string;
+  totalValue: number;
+  totalBalance: string;
+  averagePrice: number;
+  chains: number[];
+  assets: Asset[];
+  /** 该分组是否全部为测试网资产（总净值不计入） */
+  isTestnet?: boolean;
 };

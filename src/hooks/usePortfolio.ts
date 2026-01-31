@@ -3,17 +3,15 @@ import { useMemo, useEffect, useRef } from 'react';
 import { fetchPortfolio } from '@/services/portfolio';
 import { fetchTokenPrices } from '@/services/price';
 import { dashboardConfig } from '@/config/dashboard.config';
-import { useSettingsStore, type Currency } from '@/stores/settings-store';
 import type { Asset } from '@/types/assets';
 
 export function getPortfolioQueryKey(address?: string) {
   return ['portfolio', address] as const;
 }
 
-export function getPricesQueryKey(assets: Asset[], currency: string) {
-  
+export function getPricesQueryKey(assets: Asset[]) {
   const assetIds = assets.map(a => a.uniqueId).sort().join(',');
-  return ['token-prices', assetIds, currency] as const;
+  return ['token-prices', assetIds] as const;
 }
 
 function usePortfolioQuery(
@@ -45,22 +43,18 @@ function usePortfolioQuery(
   });
 }
 
-function usePricesQuery(
-  assets: Asset[],
-  currency: string,
-  enabled: boolean = true
-) {
+function usePricesQuery(assets: Asset[], enabled: boolean = true) {
   const { refresh, cache, retry } = dashboardConfig;
 
-  const queryKey = getPricesQueryKey(assets, currency);
+  const queryKey = getPricesQueryKey(assets);
   const finalEnabled = enabled && assets.length > 0;
 
   useEffect(() => {
     if (finalEnabled) {
-      console.log(`[usePricesQuery] 🔄 价格查询已配置 - assets.length: ${assets.length}, currency: ${currency}, refetchInterval: ${refresh.price}ms`);
+      console.log(`[usePricesQuery] 🔄 价格查询已配置 - assets.length: ${assets.length}, refetchInterval: ${refresh.price}ms`);
       console.log(`[usePricesQuery] Query Key:`, queryKey);
     }
-  }, [assets.length, currency, finalEnabled, refresh.price, queryKey]);
+  }, [assets.length, finalEnabled, refresh.price, queryKey]);
 
   const queryCountMapRef = useRef(new Map<string, number>());
 
@@ -82,10 +76,10 @@ function usePricesQuery(
       
       const startTime = Date.now();
       const timestamp = new Date().toLocaleTimeString();
-      console.log(`[价格查询] ${queryType} - 时间: ${timestamp}, 资产数量: ${assets.length}, 法币: ${currency}`);
+      console.log(`[价格查询] ${queryType} - 时间: ${timestamp}, 资产数量: ${assets.length}, 法币: USD`);
       
       try {
-        const result = await fetchTokenPrices(assets, currency as Currency);
+        const result = await fetchTokenPrices(assets);
         const duration = Date.now() - startTime;
         const priceCount = Object.keys(result).length;
         console.log(`[价格查询] ✅ ${queryType}完成 - 时间: ${timestamp}, 耗时: ${duration}ms, 获取到 ${priceCount} 个价格`);
@@ -113,9 +107,6 @@ function usePricesQuery(
 }
 
 export const usePortfolio = (address?: string, isConnected?: boolean) => {
-  
-  const currency = useSettingsStore((state) => state.currency);
-
   const portfolioQuery = usePortfolioQuery(address, isConnected ?? false);
 
   const assets = useMemo(() => portfolioQuery.data ?? [], [portfolioQuery.data]);
@@ -147,11 +138,7 @@ export const usePortfolio = (address?: string, isConnected?: boolean) => {
     }
   }, [portfolioQuery.isSuccess, assets.length]);
 
-  const pricesQuery = usePricesQuery(
-    assets,
-    currency,
-    pricesEnabled
-  );
+  const pricesQuery = usePricesQuery(assets, pricesEnabled);
 
   const prevPriceIsLoadingRef = useRef(pricesQuery.isLoading);
   const prevPriceIsSuccessRef = useRef(pricesQuery.isSuccess);

@@ -53,7 +53,7 @@ export function GasWidget({
         // 基础布局
         "flex items-center gap-2 px-4 py-2",
         // 胶囊样式：截图浅米色背景 #FBF5ED，无边框
-        "rounded-full bg-[#FBF5ED] dark:bg-[#FBF5ED]/90",
+        "rounded-lg bg-[#FBF5ED] dark:bg-[#FBF5ED]/90",
         "transition-all duration-200",
         className
       )}

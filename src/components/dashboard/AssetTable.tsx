@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import Image from "next/image";
 import {
   Table,
   TableBody,
@@ -12,7 +11,20 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { TrendLine } from "@/components/dashboard/TrendLine";
+import { ChevronUp } from "lucide-react";
 import type { DashboardAsset, ChainInfo } from "@/hooks/use-dashboard-state";
+
+/** 为单个资产生成 7 天 mock 价格（用于 7d Trend 预览，后端未提供历史数据时；同 assetId 同会话内稳定） */
+function getMockTrendData(assetId: string): number[] {
+  let seed = 0;
+  for (let i = 0; i < assetId.length; i++) seed += assetId.charCodeAt(i);
+  const rng = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  return Array.from({ length: 7 }, () => rng() * 100);
+}
 
 /**
  * AssetTable 组件 Props
@@ -136,7 +148,7 @@ function PriceChangeIndicator({ change }: { change: number }) {
   return (
     <span
       className={cn(
-        "text-xs font-medium",
+        "font-inter text-sm font-semibold tabular-nums",
         isPositive 
           ? "text-emerald-600 dark:text-emerald-400" 
           : "text-red-600 dark:text-red-400"
@@ -180,19 +192,30 @@ export function AssetTable({ assets, chains, isLoading }: AssetTableProps) {
       <Table>
         <TableHeader>
           <TableRow className="border-b border-border/50 hover:bg-transparent">
-            <TableHead className="text-xs font-medium text-muted-foreground">Asset</TableHead>
-            <TableHead className="text-right text-xs font-medium text-muted-foreground">Price</TableHead>
-            <TableHead className="text-right text-xs font-medium text-muted-foreground">Balance</TableHead>
-            <TableHead className="text-right text-xs font-medium text-muted-foreground">Value</TableHead>
-            <TableHead className="text-right text-xs font-medium text-muted-foreground">Networks</TableHead>
+            <TableHead className="w-10 text-center font-inter text-xs font-medium text-muted-foreground" aria-label="Rank">
+              <span className="inline-flex items-center justify-center gap-0.5">
+                <ChevronUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>#</span>
+              </span>
+            </TableHead>
+            <TableHead className="font-inter text-xs font-medium text-muted-foreground">Asset</TableHead>
+            <TableHead className="hidden w-[100px] min-w-[100px] font-inter text-xs font-medium text-muted-foreground md:table-cell md:text-right">7d Trend</TableHead>
+            <TableHead className="text-right font-inter text-xs font-medium text-muted-foreground">Price</TableHead>
+            <TableHead className="text-right font-inter text-xs font-medium text-muted-foreground">Balance</TableHead>
+            <TableHead className="text-right font-inter text-xs font-medium text-muted-foreground">Value</TableHead>
+            <TableHead className="font-inter text-right text-xs font-medium text-muted-foreground">Networks</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {assets.map((asset) => (
+          {assets.map((asset, index) => (
             <TableRow
               key={asset.id}
               className="border-b border-border/30 transition-colors hover:bg-muted/40"
             >
+              {/* 排行榜 #：按当前列表顺序 1-based */}
+              <TableCell className="w-10 py-3 text-center font-inter text-sm font-medium tabular-nums text-slate-600 dark:text-slate-400" aria-label={`Rank ${index + 1}`}>
+                {index + 1}
+              </TableCell>
               {/* Asset 列：图标 + 符号 + 名称 */}
               <TableCell className="py-3">
                 <div className="flex items-center gap-3">
@@ -206,31 +229,36 @@ export function AssetTable({ assets, chains, isLoading }: AssetTableProps) {
                     )}
                   </Avatar>
                   <div className="flex flex-col">
-                    <span className="font-semibold text-foreground">
-                      {asset.symbol}
-                    </span>
-                    <span className="text-sm text-muted-foreground">{asset.name}</span>
+                    <span className="font-medium text-slate-500 text-sm">{asset.symbol}</span>
+                    <span className="font-bold text-slate-900">{asset.name}</span>
                   </div>
                 </div>
               </TableCell>
 
-              {/* Price 列 */}
+              {/* 7d Trend - 移动端隐藏 */}
+              <TableCell className="hidden w-[100px] min-w-[100px] align-middle md:table-cell md:text-right">
+                <div className="flex justify-end">
+                  <TrendLine data={getMockTrendData(asset.id)} />
+                </div>
+              </TableCell>
+
+              {/* Price */}
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
-                  <span className="font-mono text-sm text-foreground">
+                  <span className="font-inter font-semibold tabular-nums text-foreground">
                     {formatPrice(asset.price)}
                   </span>
                   <PriceChangeIndicator change={asset.priceChange24h} />
                 </div>
               </TableCell>
 
-              {/* Balance 列 */}
-              <TableCell className="text-right font-mono text-sm text-foreground">
+              {/* Balance */}
+              <TableCell className="text-right font-inter font-semibold tabular-nums text-foreground">
                 {formatBalance(asset.balance)}
               </TableCell>
 
-              {/* Value 列 */}
-              <TableCell className="text-right font-mono text-sm font-semibold text-foreground">
+              {/* Value */}
+              <TableCell className="text-right font-inter font-semibold tabular-nums text-foreground">
                 {formatValue(asset.value)}
               </TableCell>
 

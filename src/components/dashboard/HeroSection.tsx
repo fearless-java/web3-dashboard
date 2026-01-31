@@ -61,7 +61,7 @@ function HeroStats({
       {/* PnL Pill */}
       <div
         className={cn(
-          "flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium",
+          "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium",
           isPositive
             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400"
             : "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
@@ -129,7 +129,7 @@ export function HeroSection({
             <div className="h-5 w-40 animate-pulse rounded bg-muted" />
           </div>
           <div className="flex gap-4">
-            <div className="h-8 w-24 animate-pulse rounded-full bg-muted" />
+            <div className="h-8 w-24 animate-pulse rounded-lg bg-muted" />
             <div className="h-8 w-16 animate-pulse rounded bg-muted" />
           </div>
         </div>
@@ -157,7 +157,7 @@ export function HeroSection({
             {/* 变化图标 */}
             <div
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full",
+                "flex h-6 w-6 items-center justify-center rounded-lg",
                 isPositive
                   ? "bg-emerald-500/10 dark:bg-emerald-500/20"
                   : "bg-red-500/10 dark:bg-red-500/20"

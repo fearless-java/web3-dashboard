@@ -38,12 +38,11 @@ export interface UseAggregatedPortfolioReturn {
 
 export function useAggregatedPortfolio(
   address?: string,
-  isConnected: boolean = true
+  isConnected: boolean = true,
+  showTestnets: boolean = false
 ): UseAggregatedPortfolioReturn {
-  
   const {
     data: rawAssets,
-    totalValue,
     isLoading,
     isError,
     isSuccess,
@@ -54,20 +53,21 @@ export function useAggregatedPortfolio(
     pricesStatus,
   } = usePortfolio(address, isConnected);
 
-  const aggregatedData = useMemo(() => {
-    
+  const { aggregatedData, totalValue } = useMemo(() => {
     if (!rawAssets || rawAssets.length === 0) {
-      return [];
+      return { aggregatedData: [], totalValue: 0 };
     }
-
     try {
-      return groupAssetsBySymbol(rawAssets);
-    } catch (error) {
-      
-      console.error('[useAggregatedPortfolio] 資產聚合失敗:', error);
-      return [];
+      const aggregated = groupAssetsBySymbol(rawAssets, showTestnets);
+      const total = aggregated
+        .filter((g) => !g.isTestnet)
+        .reduce((sum, g) => sum + g.totalValue, 0);
+      return { aggregatedData: aggregated, totalValue: total };
+    } catch (err) {
+      console.error("[useAggregatedPortfolio] 資產聚合失敗:", err);
+      return { aggregatedData: [], totalValue: 0 };
     }
-  }, [rawAssets]);
+  }, [rawAssets, showTestnets]);
 
   return {
     aggregatedData,

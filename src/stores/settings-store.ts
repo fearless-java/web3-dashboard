@@ -13,31 +13,6 @@ export type Theme = 'light' | 'dark' | 'system';
 export type ThemeColor = 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'cyan';
 
 /**
- * 货币类型
- */
-export type Currency = 'USD' | 'EUR' | 'CNY' | 'JPY';
-
-/**
- * 货币符号映射
- */
-export const CURRENCY_SYMBOLS: Record<Currency, string> = {
-  USD: '$',
-  EUR: '€',
-  CNY: '¥',
-  JPY: '¥',
-};
-
-/**
- * 货币名称映射
- */
-export const CURRENCY_NAMES: Record<Currency, string> = {
-  USD: '美元',
-  EUR: '欧元',
-  CNY: '人民币',
-  JPY: '日元',
-};
-
-/**
  * 主题色名称映射
  */
 export const THEME_COLOR_NAMES: Record<ThemeColor, string> = {
@@ -57,19 +32,17 @@ export const THEME_COLOR_NAMES: Record<ThemeColor, string> = {
  * - 用户修改后的值持久化到 localStorage
  * - 体现了"配置定义默认值，Store 管理当前值"的分层架构
  * 
- * 配置项为主题、主题色、货币、是否隐藏小余额
+ * 配置项为主题、主题色、是否隐藏小余额（法币仅美元，无切换）
  */
 interface SettingsStore {
   // State
   theme: Theme;
   themeColor: ThemeColor;
-  currency: Currency;
   hideSmallBalances: boolean;
 
   // Actions
   setTheme: (theme: Theme) => void;
   setThemeColor: (themeColor: ThemeColor) => void;
-  setCurrency: (currency: Currency) => void;
   toggleHideSmallBalances: () => void;
 
   // Helper: 获取实际生效的主题（当 theme === 'system' 时，返回系统偏好）
@@ -87,10 +60,6 @@ const getDefaultThemeColor = (): ThemeColor => {
   return (dashboardConfig.ui?.defaultThemeColor || 'blue') as ThemeColor;
 };
 
-const getDefaultCurrency = (): Currency => {
-  return (dashboardConfig.ui?.defaultCurrency || 'USD') as Currency;
-};
-
 /**
  * 设置 Store
  * 
@@ -105,7 +74,6 @@ export const useSettingsStore = create<SettingsStore>()(
       // 初始状态：从配置读取默认值
       theme: getDefaultTheme(),
       themeColor: getDefaultThemeColor(),
-      currency: getDefaultCurrency(),
       hideSmallBalances: false,
 
       // Actions
@@ -115,10 +83,6 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setThemeColor: (themeColor) => {
         set({ themeColor });
-      },
-
-      setCurrency: (currency) => {
-        set({ currency });
       },
 
       toggleHideSmallBalances: () => {

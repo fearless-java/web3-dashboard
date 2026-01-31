@@ -4,7 +4,9 @@ import { useState, useMemo } from "react";
 import { useAccount } from "wagmi";
 import { dashboardConfig } from "@/config/dashboard.config";
 import { getNativeTokenLogo } from "@/utils/network";
+import { isTestnetChain } from "@/utils/asset-utils";
 import { useAggregatedPortfolio } from "./useAggregatedPortfolio";
+import { useChainAssets } from "./use-chain-assets";
 import type { GroupedAsset } from "@/types/assets";
 
 /**
@@ -34,7 +36,8 @@ export type DashboardAsset = {
   priceChange24h: number;
   balance: number;
   value: number;
-  chains: string[]; // 链 ID 数组，例如 ['1', '42161', '10']
+  chains: string[];
+  isTestnet?: boolean;
 };
 
 /**
@@ -48,6 +51,7 @@ export type DashboardState = {
   chains: ChainInfo[];
   selectedChain: string;
   isLoading: boolean;
+  showTestnets: boolean;
 };
 
 /**
@@ -55,6 +59,8 @@ export type DashboardState = {
  */
 export type UseDashboardStateReturn = DashboardState & {
   setSelectedChain: (chainId: string) => void;
+  showTestnets: boolean;
+  setShowTestnets: (value: boolean) => void;
   filteredAssets: DashboardAsset[];
   refetch: () => void;
   gasPrice: string;
@@ -108,7 +114,7 @@ function buildChainsFromConfig(): ChainInfo[] {
   return [allOption, ...networkChains];
 }
 
-const CHAINS = buildChainsFromConfig();
+const ALL_CHAINS = buildChainsFromConfig();
 
 /**
  * 将 GroupedAsset 转换为 DashboardAsset
@@ -122,58 +128,67 @@ function convertGroupedAssetToDashboardAsset(
     name: groupedAsset.name,
     logo: groupedAsset.logo ?? "",
     price: groupedAsset.averagePrice,
-    priceChange24h: 0, // TODO: 需要从价格服务获取 24h 变化
+    priceChange24h: 0,
     balance: parseFloat(groupedAsset.totalBalance) || 0,
     value: groupedAsset.totalValue,
     chains: groupedAsset.chains.map((chainId) => String(chainId)),
+    isTestnet: groupedAsset.isTestnet,
   };
 }
 
 /**
  * 自定义钩子：Dashboard 状态管理
- * 
+ *
  * 数据流：
- * 1. 从 wagmi 获取钱包连接状态和地址
+ * 1. 若传入 overrideAddress（如巨鲸模式），则以其为单一数据源；否则使用 wagmi 连接地址
  * 2. 使用 useAggregatedPortfolio 获取聚合后的资产数据
  * 3. 转换数据格式以适配 Dashboard UI
  * 4. 提供链筛选功能
- * 
+ *
+ * @param overrideAddress 可选。当提供时（如 Whale Watcher 观察地址），所有数据按此地址拉取
  * @returns Dashboard 状态和操作函数
  */
-export function useDashboardState(): UseDashboardStateReturn {
+export function useDashboardState(
+  overrideAddress?: string | undefined
+): UseDashboardStateReturn {
   const [selectedChain, setSelectedChain] = useState<string>("all");
-  
-  // 获取钱包连接状态
-  const { address, isConnected } = useAccount();
+  const [showTestnets, setShowTestnets] = useState<boolean>(false);
 
-  // 获取聚合的资产数据
+  const { address: walletAddress, isConnected } = useAccount();
+  const effectiveAddress = overrideAddress ?? walletAddress ?? undefined;
+  const effectiveConnected = overrideAddress ? true : isConnected;
+
   const {
     aggregatedData,
-    totalValue,
     isLoading,
     refetch,
-  } = useAggregatedPortfolio(address, isConnected);
+  } = useAggregatedPortfolio(effectiveAddress, effectiveConnected, showTestnets);
 
-  // 转换为 Dashboard 资产格式
+  // 单链资产筛选：一次拉取、前端筛选，无额外请求
+  const { displayedAssets, chainNetWorth } = useChainAssets(
+    aggregatedData,
+    selectedChain
+  );
+
+  // 全部资产（Dashboard 格式，供链筛选等使用）
   const assets: DashboardAsset[] = useMemo(() => {
     return aggregatedData.map(convertGroupedAssetToDashboardAsset);
   }, [aggregatedData]);
 
-  // 根据选中的链筛选资产
+  // 当前展示的资产（经 useChainAssets 筛选/拆包后转 Dashboard 格式）
   const filteredAssets = useMemo(() => {
-    if (selectedChain === "all") {
-      return assets;
-    }
-    return assets.filter((asset) => asset.chains.includes(selectedChain));
-  }, [selectedChain, assets]);
+    return displayedAssets.map(convertGroupedAssetToDashboardAsset);
+  }, [displayedAssets]);
 
-  // 计算总资产价值（基于筛选后的资产）
-  const totalNetWorth = useMemo(() => {
-    if (selectedChain === "all") {
-      return totalValue;
-    }
-    return filteredAssets.reduce((sum, asset) => sum + asset.value, 0);
-  }, [selectedChain, totalValue, filteredAssets]);
+  const totalNetWorth = chainNetWorth;
+
+  // 链列表：关闭「显示测试网」时隐藏测试网选项
+  const chains = useMemo(() => {
+    if (showTestnets) return ALL_CHAINS;
+    return ALL_CHAINS.filter(
+      (c) => c.id === "all" || !isTestnetChain(c.chainId)
+    );
+  }, [showTestnets]);
 
   // 计算24小时变化（TODO: 需要历史价格数据支持）
   const { totalChange24h, totalChangePercent } = useMemo(() => {
@@ -198,10 +213,12 @@ export function useDashboardState(): UseDashboardStateReturn {
     totalChange24h,
     totalChangePercent,
     assets,
-    chains: CHAINS,
+    chains,
     selectedChain,
     isLoading,
     setSelectedChain,
+    showTestnets,
+    setShowTestnets,
     filteredAssets,
     refetch,
     gasPrice,

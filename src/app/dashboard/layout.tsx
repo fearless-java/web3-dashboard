@@ -1,6 +1,5 @@
 /**
- * Dashboard 布局
- * 使用新的 Portal 布局（居中单列流式布局）
+ * Dashboard layout – uses Portal layout (centered single-column flow)
  */
 export default function DashboardLayout({
   children,

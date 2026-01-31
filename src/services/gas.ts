@@ -40,16 +40,22 @@ export async function fetchTotalGasSpent(address: string): Promise<string> {
   console.log(`[fetchTotalGasSpent] 🔍 开始查询 Gas 消耗 - 地址: ${address}`);
 
   try {
-    // 获取 Etherscan API Key（从环境变量）
-    const apiKey = process.env.NEXT_PUBLIC_ETHERSCAN_API_KEY || '';
-    
-    if (!apiKey || apiKey.trim() === '') {
-      console.warn('[fetchTotalGasSpent] ⚠️ Etherscan API Key 未配置，返回 0');
+    // 服务端优先用 ETHERSCAN_API_KEY，否则用 NEXT_PUBLIC_ETHERSCAN_API_KEY
+    const apiKey = (
+      process.env.ETHERSCAN_API_KEY?.trim() ||
+      process.env.NEXT_PUBLIC_ETHERSCAN_API_KEY?.trim() ||
+      ''
+    );
+
+    if (!apiKey) {
+      console.warn(
+        '[fetchTotalGasSpent] ⚠️ Etherscan API Key 未配置。请在 .env.local 中设置 ETHERSCAN_API_KEY 或 NEXT_PUBLIC_ETHERSCAN_API_KEY，然后重启 dev server。'
+      );
       return '0';
     }
 
-    // 构建 API URL
-    const url = `https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=asc&apikey=${apiKey}`;
+    // Etherscan API V2（V1 已废弃）
+    const url = `https://api.etherscan.io/v2/api?chainid=1&module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&sort=asc&apikey=${apiKey}`;
     
     console.log(`[fetchTotalGasSpent] 📡 请求 Etherscan API...`);
     const response = await fetch(url, { cache: 'no-store' });

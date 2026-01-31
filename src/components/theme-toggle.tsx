@@ -6,9 +6,9 @@ import { useEffect, useState, useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: 'light', label: '浅色模式', icon: Sun },
-  { value: 'dark', label: '深色模式', icon: Moon },
-  { value: 'system', label: '跟随系统', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
 ];
 
 export function ThemeToggle() {
@@ -54,30 +54,29 @@ export function ThemeToggle() {
   };
 
   const getLabel = () => {
-    return THEME_OPTIONS.find((o) => o.value === theme)?.label ?? '跟随系统';
+    return THEME_OPTIONS.find((o) => o.value === theme)?.label ?? 'System';
   };
 
   return (
     <div className="flex items-center gap-2">
-      {/* 主题按钮：点击展开「选择主题」 */}
       <div className="relative" ref={themePickerRef}>
         <button
           onClick={() => setShowThemePicker(!showThemePicker)}
           className="relative rounded-lg bg-muted p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground group"
-          aria-label={`选择主题，当前：${getLabel()}`}
+          aria-label={`Choose theme, current: ${getLabel()}`}
           aria-expanded={showThemePicker}
           aria-haspopup="true"
           title={getLabel()}
         >
           {getIcon()}
           <span className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 transition-opacity group-hover:opacity-100">
-            主题
+            Theme
           </span>
         </button>
         {showThemePicker && (
           <div className="absolute right-0 top-full z-50 mt-2 min-w-[140px] rounded-lg border border-border bg-popover py-1 shadow-lg animate-in fade-in slide-in-from-top-2">
             <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-              选择主题
+              Choose theme
             </div>
             {THEME_OPTIONS.map((option) => {
               const Icon = option.icon;

@@ -37,13 +37,13 @@ export default function Home() {
         </div>
         <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
           <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-5 text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-active md:w-[158px]"
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-active md:w-[158px]"
             href="/dashboard"
           >
             进入仪表板
           </a>
           <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-border px-5 transition-colors hover:border-transparent hover:bg-accent md:w-[158px]"
+            className="flex h-12 w-full items-center justify-center rounded-lg border border-border px-5 transition-colors hover:border-transparent hover:bg-accent md:w-[158px]"
             href="https://github.com"
             target="_blank"
             rel="noopener noreferrer"
