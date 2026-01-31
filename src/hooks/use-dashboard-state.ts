@@ -7,6 +7,7 @@ import { getNativeTokenLogo } from "@/utils/network";
 import { isTestnetChain } from "@/utils/asset-utils";
 import { useAggregatedPortfolio } from "./useAggregatedPortfolio";
 import { useChainAssets } from "./use-chain-assets";
+import { useGasPrice } from "./use-gas-price";
 import type { GroupedAsset } from "@/types/assets";
 
 /**
@@ -23,7 +24,7 @@ export type ChainInfo = {
 
 /**
  * Dashboard 资产类型（带 Networks 列支持）
- * 
+ *
  * 说明：这是为 Dashboard UI 定制的资产类型
  * 将 GroupedAsset 转换为展示所需的格式
  */
@@ -63,7 +64,7 @@ export type UseDashboardStateReturn = DashboardState & {
   setShowTestnets: (value: boolean) => void;
   filteredAssets: DashboardAsset[];
   refetch: () => void;
-  gasPrice: string;
+  gasPrice?: string;
 };
 
 /**
@@ -73,17 +74,29 @@ export type UseDashboardStateReturn = DashboardState & {
 function getChainShortName(chainName: string): string {
   // 常见链名到缩写的映射
   const nameMap: Record<string, string> = {
-    'Ethereum': 'ETH',
-    'Arbitrum One': 'ARB',
-    'Optimism': 'OP',
-    'OP Mainnet': 'OP',
-    'Base': 'BASE',
-    'Polygon': 'POLY',
-    'Sepolia': 'SEP',
-    'BNB Smart Chain': 'BNB',
+    Ethereum: "ETH",
+    "Arbitrum One": "ARB",
+    Optimism: "OP",
+    "OP Mainnet": "OP",
+    Base: "BASE",
+    Polygon: "POLY",
+    Sepolia: "SEP",
+    "BNB Smart Chain": "BNB",
   };
-  
+
   return nameMap[chainName] || chainName.slice(0, 4).toUpperCase();
+}
+
+function formatGasPriceGwei(value: number): string {
+  const abs = Math.abs(value);
+  if (!Number.isFinite(abs) || abs === 0) return "0";
+  if (abs >= 100) return Math.round(value).toString();
+  if (abs >= 10) return value.toFixed(0);
+  if (abs >= 1) return value.toFixed(1).replace(/\.0$/, "");
+  if (abs >= 0.1) return value.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
+  if (abs >= 0.01)
+    return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  return "<0.01";
 }
 
 /**
@@ -120,7 +133,7 @@ const ALL_CHAINS = buildChainsFromConfig();
  * 将 GroupedAsset 转换为 DashboardAsset
  */
 function convertGroupedAssetToDashboardAsset(
-  groupedAsset: GroupedAsset
+  groupedAsset: GroupedAsset,
 ): DashboardAsset {
   return {
     id: groupedAsset.symbol,
@@ -149,7 +162,7 @@ function convertGroupedAssetToDashboardAsset(
  * @returns Dashboard 状态和操作函数
  */
 export function useDashboardState(
-  overrideAddress?: string | undefined
+  overrideAddress?: string | undefined,
 ): UseDashboardStateReturn {
   const [selectedChain, setSelectedChain] = useState<string>("all");
   const [showTestnets, setShowTestnets] = useState<boolean>(false);
@@ -158,17 +171,25 @@ export function useDashboardState(
   const effectiveAddress = overrideAddress ?? walletAddress ?? undefined;
   const effectiveConnected = overrideAddress ? true : isConnected;
 
-  const {
-    aggregatedData,
-    isLoading,
-    refetch,
-  } = useAggregatedPortfolio(effectiveAddress, effectiveConnected, showTestnets);
+  const { aggregatedData, isLoading, refetch } = useAggregatedPortfolio(
+    effectiveAddress,
+    effectiveConnected,
+    showTestnets,
+  );
 
   // 单链资产筛选：一次拉取、前端筛选，无额外请求
   const { displayedAssets, chainNetWorth } = useChainAssets(
     aggregatedData,
-    selectedChain
+    selectedChain,
   );
+
+  const targetChainId =
+    selectedChain === "all" ? undefined : Number(selectedChain);
+  const {
+    gasPrice: gasPriceValue,
+    isLoading: isGasPriceLoading,
+    error: gasPriceError,
+  } = useGasPrice(targetChainId);
 
   // 全部资产（Dashboard 格式，供链筛选等使用）
   const assets: DashboardAsset[] = useMemo(() => {
@@ -186,7 +207,7 @@ export function useDashboardState(
   const chains = useMemo(() => {
     if (showTestnets) return ALL_CHAINS;
     return ALL_CHAINS.filter(
-      (c) => c.id === "all" || !isTestnetChain(c.chainId)
+      (c) => c.id === "all" || !isTestnetChain(c.chainId),
     );
   }, [showTestnets]);
 
@@ -197,16 +218,25 @@ export function useDashboardState(
     // 1. 获取 24h 前的价格数据
     // 2. 计算每个资产的价值变化
     // 3. 加权平均得出总变化
-    
+
     return {
       totalChange24h: 0,
       totalChangePercent: 0,
     };
   }, []);
 
-  // Gas 价格（TODO: 接入真实 Gas 价格 API）
-  // 未来可以创建 useGasPrice hook 从 Etherscan/Alchemy 获取
-  const gasPrice = "15 Gwei";
+  const gasPrice = useMemo(() => {
+    if (isGasPriceLoading) {
+      return undefined;
+    }
+    if (gasPriceError) {
+      return "N/A";
+    }
+    if (gasPriceValue === null) {
+      return undefined;
+    }
+    return `${formatGasPriceGwei(gasPriceValue)} Gwei`;
+  }, [gasPriceError, gasPriceValue, isGasPriceLoading]);
 
   return {
     totalNetWorth,

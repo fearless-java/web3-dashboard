@@ -14,6 +14,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { TrendLine } from "@/components/dashboard/TrendLine";
 import { ChevronUp } from "lucide-react";
 import type { DashboardAsset, ChainInfo } from "@/hooks/use-dashboard-state";
+import { BlurFade } from "@/components/magicui/blur-fade";
 
 /** 为单个资产生成 7 天 mock 价格（用于 7d Trend 预览，后端未提供历史数据时；同 assetId 同会话内稳定） */
 function getMockTrendData(assetId: string): number[] {
@@ -208,9 +209,12 @@ export function AssetTable({ assets, chains, isLoading }: AssetTableProps) {
         </TableHeader>
         <TableBody>
           {assets.map((asset, index) => (
-            <TableRow
+            <BlurFade
+              as="tr"
               key={asset.id}
+              delay={0.05 * index}
               className="border-b border-border/30 transition-colors hover:bg-muted/40"
+              inView
             >
               {/* 排行榜 #：按当前列表顺序 1-based */}
               <TableCell className="w-10 py-3 text-center font-inter text-sm font-medium tabular-nums text-slate-600 dark:text-slate-400" aria-label={`Rank ${index + 1}`}>
@@ -268,7 +272,7 @@ export function AssetTable({ assets, chains, isLoading }: AssetTableProps) {
                   <NetworkIcons chainIds={asset.chains} chains={chains} />
                 </div>
               </TableCell>
-            </TableRow>
+            </BlurFade>
           ))}
         </TableBody>
       </Table>
