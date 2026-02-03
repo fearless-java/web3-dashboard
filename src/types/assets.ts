@@ -34,6 +34,7 @@ export type ChainQueryResult = {
   chainName: string;
   assets: Asset[];
   error?: string;
+  meta?: Record<string, any>;
 };
 
 /**

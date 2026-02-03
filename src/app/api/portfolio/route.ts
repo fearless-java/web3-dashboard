@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchPortfolio } from "@/services/portfolio";
+import { fetchPortfolioFromCovalent } from "@/services/covalent";
 
-/**
- * POST /api/portfolio
- * BFF 层：服务端调用 Alchemy SDK，前端不直接接触密钥
- */
 export async function POST(request: NextRequest) {
   try {
     const { address } = await request.json();
@@ -16,8 +12,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const assets = await fetchPortfolio({ address });
-    return NextResponse.json({ assets });
+    const startTime = Date.now();
+    const assets = await fetchPortfolioFromCovalent(address);
+    const duration = Date.now() - startTime;
+
+    console.log(`[api/portfolio] Covalent 总耗时: ${duration}ms, 资产数: ${assets.length}`);
+
+    return NextResponse.json({ 
+      assets,
+      meta: {
+        source: 'covalent',
+        duration,
+        count: assets.length,
+      }
+    });
   } catch (error) {
     console.error("[api/portfolio] Error:", error);
     return NextResponse.json(
