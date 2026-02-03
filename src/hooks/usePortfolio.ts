@@ -1,13 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useEffect, useRef, useCallback } from 'react';
-import { fetchPortfolio } from '@/services/portfolio';
 import { 
   fetchCurrentPricesBatch, 
   retryFailedPrices,
-  type TokenPrice 
 } from '@/services/price-current-ha';
 import { dashboardConfig } from '@/config/dashboard.config';
-import type { Asset } from '@/types/assets';
+import type { Asset, TokenPrice, PriceState } from '@/types';
 
 export function getPortfolioQueryKey(address?: string) {
   return ['portfolio', address] as const;
@@ -18,11 +16,27 @@ export function getPricesQueryKey(assets: Asset[]) {
   return ['token-prices-ha', assetIds] as const;
 }
 
-// 价格状态类型
-export type PriceState = 
-  | { status: 'loading'; price?: undefined }
-  | { status: 'success'; price: number }
-  | { status: 'failed'; price?: undefined };
+// 价格状态类型已从 @/types 导入
+export type { PriceState };
+
+/**
+ * BFF API 调用：获取资产组合
+ */
+async function fetchPortfolioFromBFF(address: string): Promise<Asset[]> {
+  const response = await fetch('/api/portfolio', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to fetch portfolio');
+  }
+
+  const data = await response.json();
+  return data.assets;
+}
 
 function usePortfolioQuery(
   address: string | undefined,
@@ -32,7 +46,7 @@ function usePortfolioQuery(
 
   return useQuery({
     queryKey: getPortfolioQueryKey(address),
-    queryFn: () => fetchPortfolio({ address: address! }),
+    queryFn: () => fetchPortfolioFromBFF(address!),
     enabled: isConnected && !!address && address.length > 0,
     staleTime: cache.enabled ? cache.staleTime : 0,
     gcTime: cache.enabled ? cache.gcTime : 0,
@@ -72,32 +86,30 @@ function usePricesQueryHA(
       // 如果有失败的，启动后台重试
       if (failedAssets.length > 0) {
         console.log(`[usePricesQueryHA] ${failedAssets.length} 个代币需要后台重试`);
-        
-        // 后台重试（不阻塞返回）
-        setTimeout(() => {
-          retryFailedPrices(failedAssets, (uniqueId, price) => {
-            if (!retryingAssetsRef.current.has(uniqueId)) {
-              retryingAssetsRef.current.add(uniqueId);
-              
-              // 更新缓存
-              queryClient.setQueryData(queryKey, (oldData: Record<string, TokenPrice> | undefined) => ({
-                ...oldData,
-                [uniqueId]: price,
-              }));
-              
-              retryingAssetsRef.current.delete(uniqueId);
-              console.log(`[usePricesQueryHA] ${price.symbol} 后台重试成功，UI已更新`);
-            }
-          });
-        }, 100);
+
+        // 后台重试（不阻塞返回，立即执行）
+        retryFailedPrices(failedAssets, (uniqueId, price) => {
+          if (!retryingAssetsRef.current.has(uniqueId)) {
+            retryingAssetsRef.current.add(uniqueId);
+
+            // 更新缓存
+            queryClient.setQueryData(queryKey, (oldData: Record<string, TokenPrice> | undefined) => ({
+              ...oldData,
+              [uniqueId]: price,
+            }));
+
+            retryingAssetsRef.current.delete(uniqueId);
+            console.log(`[usePricesQueryHA] ${price.symbol} 后台重试成功，UI已更新`);
+          }
+        });
       }
 
       return prices;
     },
     enabled: enabled && assets.length > 0,
-    staleTime: 0, // 价格实时性要求高
+    staleTime: cache.enabled ? cache.staleTime : 0, // 使用配置的缓存时间
     gcTime: cache.enabled ? cache.gcTime : 0,
-    refetchInterval: enabled ? dashboardConfig.refresh.price : false,
+    refetchInterval: enabled ? dashboardConfig.refresh.currentPrice : false,
     refetchOnWindowFocus: cache.refetchOnWindowFocus,
     refetchOnReconnect: cache.refetchOnReconnect,
     retry: 1, // 由服务层处理重试
@@ -108,12 +120,6 @@ function usePricesQueryHA(
     const map = new Map<string, PriceState>();
 
     assets.forEach((asset) => {
-      // 正在重试中 = loading
-      if (retryingAssetsRef.current.has(asset.uniqueId)) {
-        map.set(asset.uniqueId, { status: 'loading' });
-        return;
-      }
-
       // 数据未加载 = loading
       if (query.isLoading) {
         map.set(asset.uniqueId, { status: 'loading' });
@@ -121,11 +127,11 @@ function usePricesQueryHA(
       }
 
       const priceData = query.data?.[asset.uniqueId];
-      
+
       if (priceData) {
-        map.set(asset.uniqueId, { 
-          status: 'success', 
-          price: priceData.price 
+        map.set(asset.uniqueId, {
+          status: 'success',
+          price: priceData.price
         });
       } else {
         map.set(asset.uniqueId, { status: 'failed' });

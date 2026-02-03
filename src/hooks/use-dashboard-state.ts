@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { dashboardConfig } from "@/config/dashboard.config";
 import { getNativeTokenLogo } from "@/utils/network";
@@ -9,90 +9,41 @@ import { useAggregatedPortfolio } from "./useAggregatedPortfolio";
 import { useChainAssets } from "./use-chain-assets";
 import { useGasPrice } from "./use-gas-price";
 import { useAggregatedPriceHistories } from "./use-price-history";
-import type { GroupedAsset, Asset, PriceStatus } from "@/types/assets";
-import type { PriceState } from "./usePortfolio";
+import type { 
+  GroupedAsset, 
+  Asset, 
+  PriceStatus,
+  PriceState,
+  PriceHistoryState,
+  ChainInfo,
+  ChainDistributionInfo,
+  PriceHistoryStatus,
+  CurrentPriceStatus,
+  AssetCategory,
+  DashboardAsset,
+  DashboardState,
+  UseDashboardStateReturn
+} from "@/types";
 
-/**
- * 链信息类型
- */
-export type ChainInfo = {
-  id: string;
-  chainId: number;
-  name: string;
-  shortName: string;
-  logo: string;
-  color: string;
+// 类型已从 @/types 统一导入
+export type {
+  ChainInfo,
+  ChainDistributionInfo,
+  PriceHistoryStatus,
+  CurrentPriceStatus,
+  AssetCategory,
+  DashboardAsset,
+  DashboardState,
+  UseDashboardStateReturn,
 };
 
-/**
- * 历史价格状态
- */
-export type PriceHistoryStatus = 'loading' | 'success' | 'failed';
-
-/**
- * 当前价格状态
- */
-export type CurrentPriceStatus = 'loading' | 'success' | 'failed';
-
-/**
- * Dashboard 资产类型（带 Networks 列支持）
- *
- * 说明：这是为 Dashboard UI 定制的资产类型
- * 将 GroupedAsset 转换为展示所需的格式
- */
-export type DashboardAsset = {
-  id: string;
-  symbol: string;
-  name: string;
-  logo: string;
-  price: number;
-  priceChange24h: number;
-  /** 7天价格变化百分比（根据 priceHistory7d 计算） */
-  priceChange7d: number;
-  balance: number;
-  value: number;
-  chains: string[];
-  isTestnet?: boolean;
-  /** 7天价格历史数据（用于趋势图表） */
-  priceHistory7d?: number[];
-  /** 历史价格获取状态：loading = 获取中，success = 成功，failed = 失败 */
-  priceHistoryStatus: PriceHistoryStatus;
-  /** 当前价格获取状态：loading = 获取中，success = 成功，failed = 失败 */
-  priceStatus: CurrentPriceStatus;
-};
-
-/**
- * Dashboard 状态类型
- */
-export type DashboardState = {
-  totalNetWorth: number;
-  totalChange24h: number;
-  totalChangePercent: number;
-  assets: DashboardAsset[];
-  chains: ChainInfo[];
-  selectedChain: string;
-  /** 主数据加载状态（资产、价格等） */
-  isLoading: boolean;
-  showTestnets: boolean;
-};
-
-/**
- * Dashboard 状态返回类型
- */
-export type UseDashboardStateReturn = DashboardState & {
-  setSelectedChain: (chainId: string) => void;
-  setShowTestnets: (value: boolean) => void;
-  filteredAssets: DashboardAsset[];
-  refetch: () => void;
-  gasPrice?: string;
-};
+// 小资产价值阈值
+const SMALL_ASSET_THRESHOLD = 1.0; // $1
 
 /**
  * 获取链的短名称
- * 使用链名称的缩写映射
  */
 function getChainShortName(chainName: string): string {
-  // 常见链名到缩写的映射
   const nameMap: Record<string, string> = {
     Ethereum: "ETH",
     "Arbitrum One": "ARB",
@@ -107,21 +58,8 @@ function getChainShortName(chainName: string): string {
   return nameMap[chainName] || chainName.slice(0, 4).toUpperCase();
 }
 
-function formatGasPriceGwei(value: number): string {
-  const abs = Math.abs(value);
-  if (!Number.isFinite(abs) || abs === 0) return "0";
-  if (abs >= 100) return Math.round(value).toString();
-  if (abs >= 10) return value.toFixed(0);
-  if (abs >= 1) return value.toFixed(1).replace(/\.0$/, "");
-  if (abs >= 0.1) return value.toFixed(2).replace(/0$/, "").replace(/\.0$/, "");
-  if (abs >= 0.01)
-    return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-  return "<0.01";
-}
-
 /**
  * 从 dashboard 配置构建链列表（仅启用网络）
- * 使用高清 Logo 策略：优先 Trust Wallet，降级到 DefiLlama 原图
  */
 function buildChainsFromConfig(): ChainInfo[] {
   const allOption: ChainInfo = {
@@ -140,7 +78,7 @@ function buildChainsFromConfig(): ChainInfo[] {
       chainId: n.chain.id,
       name: n.customName ?? n.chain.name,
       shortName: getChainShortName(n.chain.name),
-      logo: getNativeTokenLogo(n.chain.id), // 使用高清 Logo 策略
+      logo: getNativeTokenLogo(n.chain.id),
       color: "#6366f1",
     }));
 
@@ -151,7 +89,6 @@ const ALL_CHAINS = buildChainsFromConfig();
 
 /**
  * 获取聚合资产的价格和价值
- * 使用高可用价格查询的结果
  */
 function getGroupedAssetPriceAndValue(
   groupedAsset: GroupedAsset,
@@ -161,7 +98,6 @@ function getGroupedAssetPriceAndValue(
     return { price: 0, value: 0, priceStatus: 'failed' };
   }
 
-  // 查找成功的资产价格
   let successPrice = 0;
   let hasSuccess = false;
   let hasLoading = false;
@@ -171,7 +107,7 @@ function getGroupedAssetPriceAndValue(
     if (priceState.status === 'success' && priceState.price > 0) {
       successPrice = priceState.price;
       hasSuccess = true;
-      break; // 找到成功的价格就使用
+      break;
     } else if (priceState.status === 'loading') {
       hasLoading = true;
     }
@@ -191,7 +127,6 @@ function getGroupedAssetPriceAndValue(
     return { price: 0, value: 0, priceStatus: 'loading' as CurrentPriceStatus };
   }
 
-  // 所有价格都获取失败了
   return {
     price: 0,
     value: groupedAsset.totalValue,
@@ -201,14 +136,12 @@ function getGroupedAssetPriceAndValue(
 
 /**
  * 将 GroupedAsset 转换为 DashboardAsset
- * @param groupedAsset 聚合资产
- * @param historyState 历史价格状态
- * @param getPriceState 获取单个资产价格状态的函数
  */
 function convertGroupedAssetToDashboardAsset(
   groupedAsset: GroupedAsset,
-  historyState: { status: PriceHistoryStatus; trend?: number[]; change7d?: number },
+  historyState: PriceHistoryState,
   getPriceState: (uniqueId: string) => PriceState,
+  category: AssetCategory
 ): DashboardAsset {
   const { price, value, priceStatus } = getGroupedAssetPriceAndValue(groupedAsset, getPriceState);
 
@@ -224,6 +157,7 @@ function convertGroupedAssetToDashboardAsset(
     value: value,
     chains: groupedAsset.chains.map((chainId) => String(chainId)),
     isTestnet: groupedAsset.isTestnet,
+    category,
     priceHistory7d: historyState.trend,
     priceHistoryStatus: historyState.status,
     priceStatus,
@@ -231,76 +165,133 @@ function convertGroupedAssetToDashboardAsset(
 }
 
 /**
- * 自定义钩子：Dashboard 状态管理
+ * 自定义钩子：Dashboard 状态管理（分层加载优化版）
  *
- * 数据流：
- * 1. 若传入 overrideAddress（如巨鲸模式），则以其为单一数据源；否则使用 wagmi 连接地址
- * 2. 使用 useAggregatedPortfolio 获取聚合后的资产数据
- * 3. 转换数据格式以适配 Dashboard UI
- * 4. 提供链筛选功能
- *
- * @param overrideAddress 可选。当提供时（如 Whale Watcher 观察地址），所有数据按此地址拉取
- * @returns Dashboard 状态和操作函数
+ * 核心策略：
+ * 1. Top Assets (value >= $1): 立即加载完整数据（当前价格 + 历史价格）
+ * 2. Small Assets (value < $1): 只加载当前价格，历史价格按需加载
  */
 export function useDashboardState(
   overrideAddress?: string | undefined,
 ): UseDashboardStateReturn {
   const [selectedChain, setSelectedChain] = useState<string>("all");
   const [showTestnets, setShowTestnets] = useState<boolean>(false);
+  const [smallAssetsExpanded, setSmallAssetsExpanded] = useState<boolean>(false);
 
   const { address: walletAddress, isConnected } = useAccount();
   const effectiveAddress = overrideAddress ?? walletAddress ?? undefined;
   const effectiveConnected = overrideAddress ? true : isConnected;
 
+  // 获取聚合资产数据（所有资产 + 当前价格）
   const { aggregatedData, isLoading, refetch, rawData, getPriceState } = useAggregatedPortfolio(
     effectiveAddress,
     effectiveConnected,
     showTestnets,
   );
 
-  // 获取历史价格数据（用于 7d Trend 图表）
-  const { getStateBySymbol } = useAggregatedPriceHistories(
-    rawData,
-    effectiveConnected && rawData.length > 0
+  // 分离 Top Assets 和 Small Assets
+  const { topAssetsRaw, smallAssetsRaw } = useMemo(() => {
+    const top: GroupedAsset[] = [];
+    const small: GroupedAsset[] = [];
+
+    aggregatedData.forEach((asset) => {
+      // 使用价格计算后的价值来判断
+      const { value } = getGroupedAssetPriceAndValue(asset, getPriceState);
+      if (value >= SMALL_ASSET_THRESHOLD) {
+        top.push(asset);
+      } else {
+        small.push(asset);
+      }
+    });
+
+    console.log(`[useDashboardState] 分层: Top Assets ${top.length}, Small Assets ${small.length}`);
+    return { topAssetsRaw: top, smallAssetsRaw: small };
+  }, [aggregatedData, getPriceState]);
+
+  // 提取 Top Assets 和 Small Assets 的原始 Asset 数据
+  const topRawAssets = useMemo(() => {
+    const assets: Asset[] = [];
+    topAssetsRaw.forEach(grouped => {
+      assets.push(...grouped.assets);
+    });
+    return assets;
+  }, [topAssetsRaw]);
+
+  const smallRawAssets = useMemo(() => {
+    const assets: Asset[] = [];
+    smallAssetsRaw.forEach(grouped => {
+      assets.push(...grouped.assets);
+    });
+    return assets;
+  }, [smallAssetsRaw]);
+
+  // Top Assets: 立即加载历史价格
+  // Small Assets: 仅当展开时才加载历史价格
+  const { getStateBySymbol, topHistory, smallHistory } = useAggregatedPriceHistories(
+    topRawAssets,
+    smallRawAssets,
+    effectiveConnected && topRawAssets.length > 0,
+    smallAssetsExpanded // 只有展开时才加载小资产历史价格
   );
 
-  // 单链资产筛选：一次拉取、前端筛选，无额外请求
+  // 转换所有 GroupedAsset 为 DashboardAsset
+  const topAssetsDashboard = useMemo(() => {
+    return topAssetsRaw.map((asset) => {
+      const historyState = getStateBySymbol(asset.symbol);
+      return convertGroupedAssetToDashboardAsset(
+        asset,
+        historyState,
+        getPriceState,
+        'top'
+      );
+    });
+  }, [topAssetsRaw, getStateBySymbol, getPriceState]);
+
+  const smallAssetsDashboard = useMemo(() => {
+    return smallAssetsRaw.map((asset) => {
+      const historyState = getStateBySymbol(asset.symbol);
+      return convertGroupedAssetToDashboardAsset(
+        asset,
+        historyState,
+        getPriceState,
+        'small'
+      );
+    });
+  }, [smallAssetsRaw, getStateBySymbol, getPriceState]);
+
+  // 合并所有资产
+  const assets = useMemo(() => {
+    return [...topAssetsDashboard, ...smallAssetsDashboard];
+  }, [topAssetsDashboard, smallAssetsDashboard]);
+
+  // 单链资产筛选
   const { displayedAssets, chainNetWorth } = useChainAssets(
     aggregatedData,
     selectedChain,
   );
 
-  const targetChainId =
-    selectedChain === "all" ? undefined : Number(selectedChain);
-  const {
-    gasPrice: gasPriceValue,
-    isLoading: isGasPriceLoading,
-    error: gasPriceError,
-  } = useGasPrice(targetChainId);
-
-  // 全部资产（Dashboard 格式，供链筛选等使用）
-  const assets: DashboardAsset[] = useMemo(() => {
-    return aggregatedData.map((asset) => {
-      const historyState = getStateBySymbol(asset.symbol);
-      return convertGroupedAssetToDashboardAsset(asset, {
-        status: historyState.status,
-        trend: historyState.trend,
-        change7d: historyState.change7d,
-      }, getPriceState);
-    });
-  }, [aggregatedData, getStateBySymbol, getPriceState]);
-
-  // 当前展示的资产（经 useChainAssets 筛选/拆包后转 Dashboard 格式）
+  // 转换筛选后的资产
   const filteredAssets = useMemo(() => {
     return displayedAssets.map((asset) => {
       const historyState = getStateBySymbol(asset.symbol);
-      return convertGroupedAssetToDashboardAsset(asset, {
-        status: historyState.status,
-        trend: historyState.trend,
-        change7d: historyState.change7d,
-      }, getPriceState);
+      const category = topAssetsDashboard.some(a => a.symbol === asset.symbol) ? 'top' : 'small';
+      return convertGroupedAssetToDashboardAsset(
+        asset,
+        historyState,
+        getPriceState,
+        category
+      );
     });
-  }, [displayedAssets, getStateBySymbol, getPriceState]);
+  }, [displayedAssets, getStateBySymbol, getPriceState, topAssetsDashboard]);
+
+  // 分离筛选后的资产
+  const filteredTopAssets = useMemo(() => {
+    return filteredAssets.filter(a => a.category === 'top');
+  }, [filteredAssets]);
+
+  const filteredSmallAssets = useMemo(() => {
+    return filteredAssets.filter(a => a.category === 'small');
+  }, [filteredAssets]);
 
   const totalNetWorth = chainNetWorth;
 
@@ -314,44 +305,104 @@ export function useDashboardState(
 
   // 计算24小时变化（TODO: 需要历史价格数据支持）
   const { totalChange24h, totalChangePercent } = useMemo(() => {
-    // TODO: 实现真实的 24h 变化计算
-    // 需要：
-    // 1. 获取 24h 前的价格数据
-    // 2. 计算每个资产的价值变化
-    // 3. 加权平均得出总变化
-
     return {
       totalChange24h: 0,
       totalChangePercent: 0,
     };
   }, []);
 
+  // Gas 价格显示 - 使用链的原生代币单位
+  const targetChainId = selectedChain === "all" ? 1 : Number(selectedChain);
+  const {
+    displayPrice,
+    isLoading: isGasPriceLoading,
+    error: gasPriceError,
+  } = useGasPrice(targetChainId);
+
   const gasPrice = useMemo(() => {
     if (isGasPriceLoading) {
       return undefined;
     }
-    if (gasPriceError) {
+    if (gasPriceError || !displayPrice) {
       return "N/A";
     }
-    if (gasPriceValue === null) {
-      return undefined;
-    }
-    return `${formatGasPriceGwei(gasPriceValue)} Gwei`;
-  }, [gasPriceError, gasPriceValue, isGasPriceLoading]);
+    return displayPrice;
+  }, [isGasPriceLoading, gasPriceError, displayPrice]);
+
+  // 计算价格数据统计
+  const priceStats = useMemo(() => {
+    const allAssets = [...topAssetsDashboard, ...smallAssetsDashboard];
+    return {
+      success: allAssets.filter(a => a.priceStatus === 'success').length,
+      loading: allAssets.filter(a => a.priceStatus === 'loading').length,
+      failed: allAssets.filter(a => a.priceStatus === 'failed').length,
+    };
+  }, [topAssetsDashboard, smallAssetsDashboard]);
+
+  // 计算历史价格数据统计
+  const historyStats = useMemo(() => {
+    const allAssets = [...topAssetsDashboard, ...smallAssetsDashboard];
+    return {
+      success: allAssets.filter(a => a.priceHistoryStatus === 'success').length,
+      loading: allAssets.filter(a => a.priceHistoryStatus === 'loading').length,
+      failed: allAssets.filter(a => a.priceHistoryStatus === 'failed').length,
+      pending: allAssets.filter(a => a.priceHistoryStatus === 'pending').length,
+    };
+  }, [topAssetsDashboard, smallAssetsDashboard]);
+
+  // 计算链资产分布（排除测试网）
+  // 使用 rawData 和最新的价格状态重新计算每个链的价值
+  const chainDistribution = useMemo((): ChainDistributionInfo[] => {
+    const total = totalNetWorth || 1; // 避免除以0
+    
+    return ALL_CHAINS.filter(c => c.id !== 'all').map(chain => {
+      // 遍历原始资产数据，累加该链上各 token 的最新价值
+      const chainValue = rawData
+        .filter(asset => 
+          asset.chainId === chain.chainId && 
+          !isTestnetChain(asset.chainId)
+        )
+        .reduce((sum, asset) => {
+          // 使用最新价格重新计算价值
+          const priceState = getPriceState(asset.uniqueId);
+          if (priceState.status === 'success' && priceState.price > 0) {
+            const balance = parseFloat(asset.formatted) || 0;
+            return sum + (balance * priceState.price);
+          }
+          // 如果价格获取失败，使用原始 value（如果可用）
+          return sum + (asset.value ?? 0);
+        }, 0);
+      
+      return {
+        ...chain,
+        value: chainValue,
+        percentage: (chainValue / total) * 100,
+      };
+    }).sort((a, b) => b.value - a.value); // 按价值降序排列
+  }, [rawData, totalNetWorth, getPriceState]);
 
   return {
     totalNetWorth,
     totalChange24h,
     totalChangePercent,
+    topAssets: topAssetsDashboard,
+    smallAssets: smallAssetsDashboard,
     assets,
     chains,
     selectedChain,
     isLoading,
-    setSelectedChain,
     showTestnets,
+    setSelectedChain,
     setShowTestnets,
     filteredAssets,
+    filteredTopAssets,
+    filteredSmallAssets,
     refetch,
     gasPrice,
+    smallAssetsExpanded,
+    setSmallAssetsExpanded,
+    priceStats,
+    historyStats,
+    chainDistribution,
   };
 }

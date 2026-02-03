@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { usePortfolio, type PriceState } from './usePortfolio';
 import { groupAssetsBySymbol } from '@/utils/asset-utils';
-import type { Asset, GroupedAsset, PriceStatus } from '@/types/assets';
+import type { Asset, GroupedAsset, PriceStatus } from '@/types';
 
 export interface UseAggregatedPortfolioReturn {
   

@@ -1,183 +1,86 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useEffect, useRef, useCallback } from 'react';
-import { 
-  fetchTokenPriceHistoryHA,
+import { useQuery } from '@tanstack/react-query';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  fetchTokenPriceHistoriesHABatched,
+  extract7DayTrend,
+  calculatePriceChange7d,
 } from '@/services/price-history-ha';
-import type { TokenPriceHistory } from '@/services/price-history';
 import { dashboardConfig } from '@/config/dashboard.config';
-import type { Asset } from '@/types/assets';
+import type { Asset, PriceHistoryState, TokenPriceHistory } from '@/types';
 
-// 重试配置
-const RETRY_CONFIG = {
-  maxRetries: 3,
-  initialDelay: 500,
-  backoffMultiplier: 2,
-};
-
-// 查询键
-export function getPriceHistoryQueryKey(assetIds: string) {
-  return ['token-price-history-ha-v2', assetIds] as const;
+// 查询键生成器
+function getTopAssetsHistoryQueryKey(assetIds: string) {
+  return ['token-price-history-top', assetIds] as const;
 }
 
-export function getSinglePriceHistoryQueryKey(uniqueId: string) {
-  return ['token-price-history-single-ha', uniqueId] as const;
+function getSmallAssetsHistoryQueryKey(assetIds: string) {
+  return ['token-price-history-small', assetIds] as const;
 }
 
-/**
- * 单个资产的历史价格状态
- */
-export type PriceHistoryState = 
-  | { status: 'loading'; history?: undefined; trend: []; change7d: 0 }
-  | { status: 'success'; history: TokenPriceHistory; trend: number[]; change7d: number }
-  | { status: 'failed'; history?: undefined; trend: []; change7d: 0 };
+// 类型已从 @/types 统一导入
+export type { PriceHistoryState };
 
 /**
- * 批量获取历史价格，失败隔离 + 后台重试
+ * Hook: 加载 Top Assets (价值 >= $1) 的历史价格
+ * 策略：立即并行加载所有资产，不限制数量
  */
-export function useTokenPriceHistories(
+export function useTopAssetsPriceHistory(
   assets: Asset[],
   enabled: boolean = true
 ) {
   const { cache } = dashboardConfig;
-  const queryClient = useQueryClient();
-  const retryingAssetsRef = useRef(new Set<string>());
 
   const queryKey = useMemo(() => {
     const assetIds = assets.map(a => a.uniqueId).sort().join(',');
-    return getPriceHistoryQueryKey(assetIds);
+    return getTopAssetsHistoryQueryKey(assetIds);
   }, [assets]);
 
-  // 批量获取（第一次）
   const query = useQuery({
     queryKey,
     queryFn: async () => {
-      console.log(`[useTokenPriceHistories] 批量获取 ${assets.length} 个代币`);
-      
-      const results: Record<string, TokenPriceHistory | null> = {};
-      
-      // 串行获取避免限流
-      for (const asset of assets) {
-        try {
-          const history = await fetchTokenPriceHistoryHA(asset);
-          results[asset.uniqueId] = history;
-        } catch (error) {
-          console.warn(`[useTokenPriceHistories] ${asset.symbol} 初始获取失败`);
-          results[asset.uniqueId] = null;
-        }
-        // 小延迟避免请求过快
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-
-      return results;
+      console.log(`[useTopAssetsPriceHistory] 加载 ${assets.length} 个 Top 资产历史价格`);
+      return await fetchTokenPriceHistoriesHABatched(assets);
     },
     enabled: enabled && assets.length > 0,
-    staleTime: 6 * 60 * 60 * 1000,
+    staleTime: cache.enabled ? cache.staleTimeHistory : 0,
     gcTime: cache.enabled ? cache.gcTime : 0,
-    retry: false, // 我们自己处理重试
+    retry: false,
     refetchInterval: false,
     refetchOnWindowFocus: false,
   });
-
-  // 后台重试失败的代币
-  const retryFailedAssets = useCallback(async (failedAssets: Asset[]) => {
-    if (failedAssets.length === 0) return;
-    
-    console.log(`[useTokenPriceHistories] 后台重试 ${failedAssets.length} 个失败代币`);
-
-    for (const asset of failedAssets) {
-      // 避免重复重试
-      if (retryingAssetsRef.current.has(asset.uniqueId)) continue;
-      retryingAssetsRef.current.add(asset.uniqueId);
-
-      // 阶梯式重试
-      let history: TokenPriceHistory | null = null;
-      
-      for (let attempt = 0; attempt < RETRY_CONFIG.maxRetries; attempt++) {
-        try {
-          history = await fetchTokenPriceHistoryHA(asset);
-          if (history) break; // 成功，退出重试循环
-        } catch (error) {
-          console.warn(`[useTokenPriceHistories] ${asset.symbol} 重试 ${attempt + 1}/${RETRY_CONFIG.maxRetries} 失败`);
-        }
-
-        // 延迟后再次重试
-        if (attempt < RETRY_CONFIG.maxRetries - 1) {
-          const delay = RETRY_CONFIG.initialDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
-
-      // 更新缓存（触发UI更新）
-      if (history) {
-        console.log(`[useTokenPriceHistories] ${asset.symbol} 重试成功`);
-        queryClient.setQueryData(queryKey, (oldData: Record<string, TokenPriceHistory | null> | undefined) => ({
-          ...oldData,
-          [asset.uniqueId]: history,
-        }));
-      } else {
-        console.log(`[useTokenPriceHistories] ${asset.symbol} 重试${RETRY_CONFIG.maxRetries}次后仍失败`);
-      }
-
-      retryingAssetsRef.current.delete(asset.uniqueId);
-      
-      // 每个代币重试后小延迟
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-  }, [queryClient, queryKey]);
-
-  // 初始加载完成后，后台重试失败的
-  useEffect(() => {
-    if (query.isSuccess && !query.isFetching) {
-      const failedAssets = assets.filter(asset => !query.data?.[asset.uniqueId]);
-      if (failedAssets.length > 0) {
-        retryFailedAssets(failedAssets);
-      }
-    }
-  }, [query.isSuccess, query.isFetching, assets, query.data, retryFailedAssets]);
 
   // 构建状态映射
   const stateMap = useMemo(() => {
     const map = new Map<string, PriceHistoryState>();
 
     assets.forEach((asset) => {
-      // 正在重试中 = loading
-      if (retryingAssetsRef.current.has(asset.uniqueId)) {
-        map.set(asset.uniqueId, { status: 'loading', trend: [], change7d: 0 });
-        return;
-      }
-
-      // 数据未加载 = loading
       if (query.isLoading) {
-        map.set(asset.uniqueId, { status: 'loading', trend: [], change7d: 0 });
+        map.set(asset.uniqueId, {
+          status: 'loading',
+          trend: [],
+          change7d: 0,
+        });
         return;
       }
 
       const history = query.data?.[asset.uniqueId];
-      
-      if (history) {
-        // 计算趋势数据
-        const prices = history.prices.map(p => p.price);
-        const trend = prices.length <= 7 
-          ? prices 
-          : Array.from({ length: 7 }, (_, i) => {
-              const index = Math.round(i * (prices.length - 1) / 6);
-              return prices[index];
-            });
-        
-        // 计算变化百分比
-        const change7d = prices.length >= 2
-          ? ((prices[prices.length - 1] - prices[0]) / prices[0]) * 100
-          : 0;
 
-        map.set(asset.uniqueId, { 
-          status: 'success', 
-          history, 
-          trend, 
-          change7d 
+      if (history) {
+        const trend = extract7DayTrend(history);
+        const change7d = calculatePriceChange7d(history);
+
+        map.set(asset.uniqueId, {
+          status: 'success',
+          history,
+          trend,
+          change7d,
         });
       } else {
-        // 数据加载完成但没有结果 = failed
-        map.set(asset.uniqueId, { status: 'failed', trend: [], change7d: 0 });
+        map.set(asset.uniqueId, {
+          status: 'failed',
+          trend: [],
+          change7d: 0,
+        });
       }
     });
 
@@ -196,21 +99,141 @@ export function useTokenPriceHistories(
 }
 
 /**
+ * Hook: 加载 Small Assets (价值 < $1) 的历史价格
+ * 策略：
+ * - enabled=false 时不加载任何数据
+ * - enabled=true 时立即加载（用户展开时）
+ */
+export function useSmallAssetsPriceHistory(
+  assets: Asset[],
+  enabled: boolean = false,
+  options?: { delay?: number; backgroundLoad?: boolean }
+) {
+  const { cache } = dashboardConfig;
+  const { delay = 0, backgroundLoad = false } = options || {};
+  const hasLoadedRef = useRef(false);
+
+  const queryKey = useMemo(() => {
+    const assetIds = assets.map(a => a.uniqueId).sort().join(',');
+    return getSmallAssetsHistoryQueryKey(assetIds);
+  }, [assets]);
+
+  // 延迟加载：等待 Top Assets 渲染完成后再加载 Small Assets
+  const shouldFetch = enabled && (backgroundLoad || hasLoadedRef.current);
+
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      if (!shouldFetch) return {};
+
+      console.log(`[useSmallAssetsPriceHistory] 加载 ${assets.length} 个 Small 资产历史价格`);
+
+      // 如果设置了延迟，先等待
+      if (delay > 0 && !hasLoadedRef.current) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      hasLoadedRef.current = true;
+      return await fetchTokenPriceHistoriesHABatched(assets);
+    },
+    enabled: shouldFetch && assets.length > 0,
+    staleTime: cache.enabled ? cache.staleTimeHistory : 0,
+    gcTime: cache.enabled ? cache.gcTime : 0,
+    retry: false,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+  });
+
+  // 构建状态映射
+  const stateMap = useMemo(() => {
+    const map = new Map<string, PriceHistoryState>();
+
+    assets.forEach((asset) => {
+      // 未启用加载 = pending
+      if (!shouldFetch) {
+        map.set(asset.uniqueId, {
+          status: 'pending',
+          trend: [],
+          change7d: 0,
+        });
+        return;
+      }
+
+      if (query.isLoading) {
+        map.set(asset.uniqueId, {
+          status: 'loading',
+          trend: [],
+          change7d: 0,
+        });
+        return;
+      }
+
+      const history = query.data?.[asset.uniqueId];
+
+      if (history) {
+        const trend = extract7DayTrend(history);
+        const change7d = calculatePriceChange7d(history);
+
+        map.set(asset.uniqueId, {
+          status: 'success',
+          history,
+          trend,
+          change7d,
+        });
+      } else {
+        map.set(asset.uniqueId, {
+          status: 'failed',
+          trend: [],
+          change7d: 0,
+        });
+      }
+    });
+
+    return map;
+  }, [assets, query.data, query.isLoading, shouldFetch]);
+
+  const getState = useCallback((uniqueId: string): PriceHistoryState => {
+    return stateMap.get(uniqueId) ?? { status: 'pending', trend: [], change7d: 0 };
+  }, [stateMap]);
+
+  return {
+    ...query,
+    getState,
+    stateMap,
+    isLoading: query.isLoading && shouldFetch,
+  };
+}
+
+/**
  * Hook: 聚合资产历史价格（按 symbol 分组）
+ * 合并 Top Assets 和 Small Assets 的历史价格状态
  */
 export function useAggregatedPriceHistories(
-  assets: Asset[],
-  enabled: boolean = true
+  topAssets: Asset[],
+  smallAssets: Asset[],
+  enabled: boolean = true,
+  smallAssetsEnabled: boolean = false
 ) {
-  const { stateMap, getState, isLoading } = useTokenPriceHistories(assets, enabled);
+  // Top Assets: 立即加载
+  const topHistory = useTopAssetsPriceHistory(topAssets, enabled);
+
+  // Small Assets: 按需立即加载（无延迟）
+  const smallHistory = useSmallAssetsPriceHistory(
+    smallAssets,
+    smallAssetsEnabled,
+    { delay: 0, backgroundLoad: false }
+  );
+
+  // 合并所有资产的历史价格状态
+  const allAssets = useMemo(() => [...topAssets, ...smallAssets], [topAssets, smallAssets]);
 
   // symbol -> 状态的映射（优先返回成功的）
   const symbolToState = useMemo(() => {
     const map = new Map<string, PriceHistoryState>();
-    
-    // 按 symbol 分组，只要有成功的就用成功的
+
+    // 按 symbol 分组
     const symbolGroups = new Map<string, Asset[]>();
-    assets.forEach(asset => {
+    allAssets.forEach(asset => {
       const list = symbolGroups.get(asset.symbol) ?? [];
       list.push(asset);
       symbolGroups.set(asset.symbol, list);
@@ -218,37 +241,77 @@ export function useAggregatedPriceHistories(
 
     // 每个 symbol 找一个成功的
     symbolGroups.forEach((assetList, symbol) => {
-      // 优先找成功的
+      // 优先从 Top Assets 找
       for (const asset of assetList) {
+        const isTopAsset = topAssets.some(a => a.uniqueId === asset.uniqueId);
+        if (isTopAsset) {
+          const state = topHistory.getState(asset.uniqueId);
+          if (state.status === 'success' || state.status === 'loading') {
+            map.set(symbol, state);
+            return;
+          }
+        }
+      }
+
+      // 其次从 Small Assets 找
+      for (const asset of assetList) {
+        const isSmallAsset = smallAssets.some(a => a.uniqueId === asset.uniqueId);
+        if (isSmallAsset) {
+          const state = smallHistory.getState(asset.uniqueId);
+          if (state.status === 'success' || state.status === 'loading') {
+            map.set(symbol, state);
+            return;
+          }
+        }
+      }
+
+      // 都没找到 = failed 或 pending
+      for (const asset of assetList) {
+        const isTopAsset = topAssets.some(a => a.uniqueId === asset.uniqueId);
+        const getState = isTopAsset ? topHistory.getState : smallHistory.getState;
         const state = getState(asset.uniqueId);
-        if (state.status === 'success') {
+        if (state.status !== 'success') {
           map.set(symbol, state);
           return;
         }
       }
-      // 其次找 loading 的
-      for (const asset of assetList) {
-        const state = getState(asset.uniqueId);
-        if (state.status === 'loading') {
-          map.set(symbol, state);
-          return;
-        }
-      }
-      // 都没成功就是 failed
-      map.set(symbol, { status: 'failed', trend: [], change7d: 0 });
+
+      map.set(symbol, { status: 'pending', trend: [], change7d: 0 });
     });
 
     return map;
-  }, [assets, getState]);
+  }, [allAssets, topAssets, smallAssets, topHistory, smallHistory]);
 
   const getStateBySymbol = useCallback((symbol: string): PriceHistoryState => {
-    return symbolToState.get(symbol) ?? { status: 'failed', trend: [], change7d: 0 };
+    return symbolToState.get(symbol) ?? { status: 'pending', trend: [], change7d: 0 };
   }, [symbolToState]);
 
+  // 总体加载状态
+  const isLoading = topHistory.isLoading;
+
   return {
-    getState,
+    getState: (uniqueId: string) => {
+      const isTopAsset = topAssets.some(a => a.uniqueId === uniqueId);
+      return isTopAsset
+        ? topHistory.getState(uniqueId)
+        : smallHistory.getState(uniqueId);
+    },
     getStateBySymbol,
     symbolToState,
     isLoading,
+    topHistory,
+    smallHistory,
   };
+}
+
+// ============ 兼容旧接口的导出 ============
+
+/**
+ * @deprecated 使用 useTopAssetsPriceHistory 或 useAggregatedPriceHistories
+ */
+export function useTokenPriceHistories(
+  assets: Asset[],
+  enabled: boolean = true
+) {
+  return useTopAssetsPriceHistory(assets, enabled);
 }
