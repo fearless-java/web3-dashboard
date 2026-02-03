@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Wallet } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/Logo';
 
 /**
  * 不显示全局导航栏的路径列表
@@ -26,13 +26,17 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="container flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* 左侧：Logo + 项目名称 */}
-        <div className="flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-            <div className="flex items-center justify-center rounded-lg bg-primary/10 p-2">
-              <Wallet className="h-5 w-5 text-primary" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight">
+        {/* 左侧：Logo + 项目名称 - DeBank 风格 */}
+        <div className="flex items-center">
+          <Link 
+            href="/" 
+            className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
+          >
+            <Logo size={32} />
+            <span 
+              className="text-lg font-semibold tracking-tight text-foreground"
+              style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
+            >
               Crypto Dashboard
             </span>
           </Link>

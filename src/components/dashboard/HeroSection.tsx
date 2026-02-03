@@ -16,7 +16,7 @@ interface HeroSectionProps {
   totalChange24h: number;
   /** 24小时变化百分比 (Deprecated) */
   totalChangePercent: number;
-  /** Gas 价格（例如："15 Gwei"） */
+  /** Gas 价格（例如："0.0000032 ETH"） */
   gasPrice?: string;
   /** 用户历史 Gas 消耗（ETH 字符串，来自 Etherscan） */
   totalGasSpent?: string;

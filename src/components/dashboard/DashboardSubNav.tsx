@@ -1,50 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
-import { LayoutDashboard, Coins, Search } from "lucide-react";
+import { LayoutDashboard, History, Coins, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-/**
- * Custom Whale Icon (Lucide style)
- * SVG path representing a whale, styled to match lucide-react icons.
- */
-function WhaleIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M2.5 19c0-5 5.5-9 11.5-9 3.5 0 6 2 7.5 4.5" />
-      <path d="M14 10a8 8 0 0 1 8-4 10 10 0 0 1-1 8" />
-      <path d="M2.5 19c3-1 6-1 8.5 0" />
-      <path d="M15 17c1.5 0 3-1 4-2.5" />
-      <circle cx="15.5" cy="13.5" r="1" fill="currentColor" />
-    </svg>
-  );
-}
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ShinyButton } from "@/components/magicui/shiny-button";
 import type { DashboardViewMode } from "@/hooks/use-dashboard-view";
 
 export interface DashboardSubNavProps {
-  /** Current view mode (Overview / Whale Watcher / Token Inspector) */
+  /** Current view mode (Overview / History / Token Inspector) */
   currentMode: DashboardViewMode;
   /** Called when user selects a tab */
   onModeChange: (mode: DashboardViewMode) => void;
-  /** Called when user clicks "Track" with the input value (parent validates and may set trackError) */
+  /** Called when user inputs an address (parent validates) */
   onTrackSubmit: (input: string) => void;
   /** Optional error message from parent (e.g. invalid address) */
   trackError?: string | null;
+  /** Currently tracked address if any */
+  trackedAddress?: string | null;
 }
 
 const MODES: {
@@ -60,10 +31,10 @@ const MODES: {
     iconColor: "text-blue-500 dark:text-blue-400",
   },
   {
-    id: "WHALE_WATCHER",
-    label: "Whale Watcher",
-    Icon: WhaleIcon,
-    iconColor: "text-amber-500 dark:text-amber-400",
+    id: "HISTORY",
+    label: "History",
+    Icon: History,
+    iconColor: "text-purple-500 dark:text-purple-400",
   },
   {
     id: "TOKEN_INSPECTOR",
@@ -74,15 +45,16 @@ const MODES: {
 ];
 
 /**
- * Secondary navigation – pure presentational.
- * Renders tab pills and, in Whale Watcher mode, a search bar.
- * No address validation or mode logic; all via props.
+ * Secondary navigation – DeBank 风格
+ * 左侧：选项卡（Overview / History / Token Inspector）
+ * 右侧：地址输入框
  */
 export function DashboardSubNav({
   currentMode,
   onModeChange,
   onTrackSubmit,
   trackError = null,
+  trackedAddress = null,
 }: DashboardSubNavProps) {
   const [inputValue, setInputValue] = useState("");
 
@@ -91,10 +63,10 @@ export function DashboardSubNav({
   };
 
   return (
-    <div className="w-full border-b border-border/50 bg-transparent py-4">
+    <div className="w-full border-b border-border/60 bg-background backdrop-blur-xl py-3">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-        {/* Left: Tab pills (Overview / Whale Watcher / Token Inspector) */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* 左侧：选项卡 */}
+        <div className="flex flex-wrap items-center gap-1">
           {MODES.map(({ id, label, Icon, iconColor }) => {
             const isSelected = currentMode === id;
             const isDisabled = id === "TOKEN_INSPECTOR";
@@ -105,12 +77,12 @@ export function DashboardSubNav({
                 disabled={isDisabled}
                 onClick={() => !isDisabled && onModeChange(id)}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg border-0 px-4 py-2.5 text-sm font-semibold transition-all",
+                  "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-semibold transition-all",
                   isDisabled && "cursor-not-allowed opacity-50",
                   isSelected
-                    ? "bg-green-100 text-green-700 hover:bg-green-100/90 dark:bg-green-500/20 dark:text-green-800"
+                    ? "text-foreground font-bold"
                     : !isDisabled &&
-                        "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300",
+                        "text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Icon
@@ -123,41 +95,33 @@ export function DashboardSubNav({
           })}
         </div>
 
-        {/* Right: Search bar only in Whale Watcher mode */}
-        {currentMode === "WHALE_WATCHER" && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Input
-              type="text"
-              placeholder="Enter 0x address..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleTrack()}
-              className={cn(
-                "min-w-[200px] max-w-xs font-mono text-sm",
-                trackError && "border-destructive",
-              )}
-              aria-invalid={!!trackError}
-              aria-describedby={trackError ? "track-error" : undefined}
-            />
-            <ShinyButton
-              onClick={handleTrack}
-              className="h-10 rounded-md bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-500"
-            >
-              <div className="flex items-center gap-2">
-                <Search className="h-4 w-4" aria-hidden />
-                Track
-              </div>
-            </ShinyButton>
-            {trackError && (
-              <p
-                id="track-error"
-                className="text-sm text-destructive sm:order-3"
-              >
-                {trackError}
-              </p>
-            )}
+        {/* 右侧：地址输入框 - DeBank 风格 */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="group flex items-center">
+            <div className="flex items-center overflow-hidden rounded-lg border border-input bg-muted/30 px-3 py-1.5 transition-all group-hover:border-input/80 group-focus-within:border-primary/50 group-focus-within:bg-background">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder={trackedAddress ? trackedAddress : "Paste wallet address..."}
+                value={trackedAddress ? trackedAddress : inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleTrack()}
+                className={cn(
+                  "ml-2 w-48 border-0 bg-transparent px-0 py-0 text-sm font-mono font-medium text-foreground placeholder:text-muted-foreground/50 outline-none transition-colors",
+                  trackError && "text-destructive",
+                  trackedAddress && "text-muted-foreground",
+                )}
+                aria-invalid={!!trackError}
+                aria-describedby={trackError ? "track-error" : undefined}
+              />
+            </div>
           </div>
-        )}
+          {trackError && (
+            <p id="track-error" className="text-sm text-destructive">
+              {trackError}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { FlaskConical } from "lucide-react";
-import type { ChainInfo } from "@/hooks/use-dashboard-state";
+import type { ChainInfo } from "@/types";
 
 /**
  * ChainFilter 组件 Props
