@@ -16,6 +16,13 @@ export type NetworkConfig = {
    * 用于 RPC 调用和网络识别
    */
   alchemyNetwork?: Network;
+
+  /**
+   * DefiLlama 链标识符
+   * 用于 DefiLlama API 调用时的链名称
+   * 例如: 'ethereum', 'arbitrum', 'optimism', 'polygon', 'base' 等
+   */
+  defiLlamaKey?: string;
 };
 
 /**
@@ -26,20 +33,26 @@ export type RefreshConfig = {
   // 包含：代币列表 + 余额 + 代币基础元数据(Symbol/Decimals)
   // 建议：60s (1分钟)
   // 原因：除非交易，否则不变。
-  portfolio: number; 
+  portfolio: number;
 
-  // 2. 市场价格数据 (API层)
+  // 2. 当前市场价格数据 (API层)
   // 包含：所有代币的 USD 价格
   // 建议：15s - 30s
   // 原因：需要让用户感觉到行情在跳动。
-  price: number;
+  currentPrice: number;
 
-  // 3. 交易历史 (RPC/Indexer层)
+  // 3. 历史价格数据 (API层)
+  // 包含：7天历史价格、K线数据等
+  // 建议：false (不自动刷新) 或 3600000 (1小时)
+  // 原因：历史数据变化极慢，频繁刷新浪费带宽且容易触发限流。
+  historyPrice: number | false;
+
+  // 4. 交易历史 (RPC/Indexer层)
   // 建议：60s - 120s (甚至更长)
   // 原因：历史数据只会增加，不会变。
   transaction: number;
 
-  // 4. NFT 数据 (RPC/NFT API层)
+  // 5. NFT 数据 (RPC/NFT API层)
   // 建议：120s (2分钟) 或甚至不自动刷新，只在切Tab时刷新
   // 原因：NFT 流动性低，变化频率远低于代币。
   nft: number;
@@ -56,11 +69,12 @@ export type RetryConfig = {
 };
 
 /**
- * 缓存配置：1.是否启用 2.数据过期时间 3.垃圾回收时间 4.窗口聚焦时重新获取 5.网络重连时重新获取
+ * 缓存配置：1.是否启用 2.数据过期时间 3.垃圾回收时间 4.窗口聚焦时重新获取 5.网络重连时重新获取 6.历史价格过期时间
  */
 export type CacheConfig = {
   enabled: boolean;
   staleTime: number;
+  staleTimeHistory: number;
   gcTime: number;
   refetchOnWindowFocus: boolean;
   refetchOnReconnect: boolean;

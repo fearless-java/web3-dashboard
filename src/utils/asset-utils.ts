@@ -1,7 +1,9 @@
-import type { Asset, GroupedAsset } from '@/types/assets';
+import type { Asset, GroupedAsset } from '@/types';
 
-/**
- * 测试网 Chain ID 集合（不参与净值聚合，避免零价值测试币稀释主网单价）
+/** 兜底代币 Logo URL - 当代币无法获取 logo 时使用 */
+export const FALLBACK_TOKEN_LOGO = '/token-fallback.svg';
+
+/** 测试网 Chain ID 集合（不参与净值聚合，避免零价值测试币稀释主网单价）
  * 常见：Sepolia 11155111, Goerli 5, Mumbai 80001, Arbitrum Sepolia 421614, OP Sepolia 11155420, Base Sepolia 84532, Fuji 43113, BSC Testnet 97
  */
 /** 测试网 Chain ID 集合，供链筛选等 UI 使用 */
@@ -50,7 +52,7 @@ function buildGroupedFromList(assetList: Asset[], symbolKey: string, isTestnet: 
       const assetValue = asset.value ?? 0;
       return assetValue > maxValue ? asset : max;
     }, assetList[0]);
-    selectedLogo = highestValueAsset?.logo;
+    selectedLogo = highestValueAsset?.logo || FALLBACK_TOKEN_LOGO;
     selectedName = highestValueAsset?.name || selectedName;
   }
 

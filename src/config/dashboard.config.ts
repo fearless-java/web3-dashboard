@@ -12,7 +12,8 @@ const createNetworkConfig = (
   priority: number = 0,
   customName?: string,
   iconurl?: string,
-  alchemyNetwork?: Network
+  alchemyNetwork?: Network,
+  defiLlamaKey?: string
 ): NetworkConfig => ({
   chain,
   enabled,
@@ -20,6 +21,7 @@ const createNetworkConfig = (
   customName,
   iconurl,
   alchemyNetwork,
+  defiLlamaKey,
 });
 
 /**
@@ -28,68 +30,76 @@ const createNetworkConfig = (
 export const dashboardConfig: DashboardConfig = {
   networks: [
     createNetworkConfig(
-      chains.mainnet, 
-      true, 
-      1, 
-      'Ethereum', 
+      chains.mainnet,
+      true,
+      1,
+      'Ethereum',
       'https://icons.llamao.fi/icons/chains/rsz_ethereum',
-      Network.ETH_MAINNET
+      Network.ETH_MAINNET,
+      'ethereum'
     ),
     createNetworkConfig(
-      chains.arbitrum, 
-      true, 
-      2, 
-      'Arbitrum', 
+      chains.arbitrum,
+      true,
+      2,
+      'Arbitrum',
       'https://icons.llamao.fi/icons/chains/rsz_arbitrum',
-      Network.ARB_MAINNET
+      Network.ARB_MAINNET,
+      'arbitrum'
     ),
     createNetworkConfig(
-      chains.optimism, 
-      true, 
-      3, 
-      'Optimism', 
+      chains.optimism,
+      true,
+      3,
+      'Optimism',
       'https://icons.llamao.fi/icons/chains/rsz_optimism',
-      Network.OPT_MAINNET
+      Network.OPT_MAINNET,
+      'optimism'
     ),
     createNetworkConfig(
-      chains.base, 
-      true, 
-      4, 
-      'Base', 
+      chains.base,
+      true,
+      4,
+      'Base',
       'https://icons.llamao.fi/icons/chains/rsz_base',
-      Network.BASE_MAINNET
-    ), 
+      Network.BASE_MAINNET,
+      'base'
+    ),
     createNetworkConfig(
-      chains.polygon, 
-      true, 
-      5, 
-      'Polygon', 
+      chains.polygon,
+      true,
+      5,
+      'Polygon',
       'https://icons.llamao.fi/icons/chains/rsz_polygon',
-      Network.MATIC_MAINNET
+      Network.MATIC_MAINNET,
+      'polygon'
     ),
     createNetworkConfig(
-      chains.avalanche, 
-      false, 
-      6, 
-      'Avalanche', 
+      chains.avalanche,
+      true,
+      6,
+      'Avalanche',
       'https://icons.llamao.fi/icons/chains/rsz_avalanche',
-      Network.AVAX_MAINNET
+      Network.AVAX_MAINNET,
+      'avax'
     ),
     createNetworkConfig(
-      chains.bsc, 
-      false, 
-      7, 
-      'BNB Chain', 
+      chains.bsc,
+      true,
+      7,
+      'BNB Chain',
       'https://icons.llamao.fi/icons/chains/rsz_binance',
-      Network.BNB_MAINNET
+      Network.BNB_MAINNET,
+      'bsc'
     ),
     createNetworkConfig(
-      chains.sepolia, 
-      true, 
-      8, 
-      'Sepolia', 
+      chains.sepolia,
+      true,
+      8,
+      'Sepolia',
       'https://icons.llamao.fi/icons/chains/rsz_ethereum',
       Network.ETH_SEPOLIA
+      // Sepolia 是测试网，不添加 defiLlamaKey（DefiLlama 主要用于主网）
     ),
   ],
 
@@ -100,23 +110,25 @@ export const dashboardConfig: DashboardConfig = {
 
   refresh: {
     portfolio: 60000, // 60s - 核心资产数据刷新间隔
-    price: 15000, // 15s - 市场价格数据刷新间隔
+    currentPrice: 30000, // 30s - 当前市场价格刷新间隔（降低刷新频率减少请求）
+    historyPrice: false, // false - 历史价格不自动刷新（变化极慢）
     transaction: 60000, // 60s - 交易历史刷新间隔
     nft: 120000, // 120s - NFT 数据刷新间隔
   },
 
   retry: {
-    maxRetries: 3,
-    retryDelay: 1000,
+    maxRetries: 2, // 减少重试次数，快速失败
+    retryDelay: 500, // 减少重试延迟
     exponentialBackoff: true,
-    timeout: 10000, 
+    timeout: 5000, // 减少超时时间
   },
 
   cache: {
     enabled: true,
-    staleTime: 30000, 
-    gcTime: 300000, 
-    refetchOnWindowFocus: true,
+    staleTime: 60000, // 1分钟 - 当前价格数据过期时间（减少缓存时间，确保数据新鲜度）
+    staleTimeHistory: 3600000, // 1h - 历史价格数据过期时间
+    gcTime: 300000,
+    refetchOnWindowFocus: false, // 禁用窗口聚焦刷新，避免意外请求
     refetchOnReconnect: true,
   },
 

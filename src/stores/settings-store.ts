@@ -1,53 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { dashboardConfig } from '@/config/dashboard.config';
+import type { Theme, ThemeColor, SettingsStore } from '@/types';
+import { THEME_COLOR_NAMES } from '@/types';
 
-/**
- * 主题类型：浅色、深色、跟随系统
- */
-export type Theme = 'light' | 'dark' | 'system';
-
-/**
- * 主题色类型
- */
-export type ThemeColor = 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'cyan';
-
-/**
- * 主题色名称映射
- */
-export const THEME_COLOR_NAMES: Record<ThemeColor, string> = {
-  blue: '蓝色',
-  green: '绿色',
-  purple: '紫色',
-  orange: '橙色',
-  pink: '粉色',
-  cyan: '青色',
-};
-
-/**
- * 设置 Store 接口
- * 
- * 架构说明：
- * - 初始值从 dashboardConfig.ui 读取（系统默认配置）
- * - 用户修改后的值持久化到 localStorage
- * - 体现了"配置定义默认值，Store 管理当前值"的分层架构
- * 
- * 配置项为主题、主题色、是否隐藏小余额（法币仅美元，无切换）
- */
-interface SettingsStore {
-  // State
-  theme: Theme;
-  themeColor: ThemeColor;
-  hideSmallBalances: boolean;
-
-  // Actions
-  setTheme: (theme: Theme) => void;
-  setThemeColor: (themeColor: ThemeColor) => void;
-  toggleHideSmallBalances: () => void;
-
-  // Helper: 获取实际生效的主题（当 theme === 'system' 时，返回系统偏好）
-  getEffectiveTheme: () => 'light' | 'dark';
-}
+// 类型已从 @/types 统一导入
+export type { Theme, ThemeColor, SettingsStore };
 
 /**
  * 从配置中获取默认值
