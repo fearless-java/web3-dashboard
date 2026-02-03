@@ -1,23 +1,54 @@
 import { isAddress, formatUnits, getAddress } from 'viem';
-import { Alchemy, TokenBalanceType } from 'alchemy-sdk';
 import { dashboardConfig } from '@/config/dashboard.config';
-import { getAlchemyNetworkEnum, getNativeTokenLogo, getTrustWalletChainName } from '@/utils/network';
-import type { Asset, ChainQueryResult, FetchPortfolioParams } from '@/types/assets';
+import { getRpcUrl, getNativeTokenLogo, getTrustWalletChainName } from '@/utils/network';
+import type { Asset, ChainQueryResult, FetchPortfolioParams } from '@/types';
 
-/**
- * 获取单链资产
- * 输入：所在链id、所在链名称、地址
- * 输出：是否成功、所在链id、所在链名称、资产列表、错误信息
- * 步骤：
- * 1. 获取Alchemy实例
- * 2. 获取网络配置
- * 3. 获取原生代币余额
- * 4. 获取代币余额
- * 5. 获取代币元数据
- * 6. 构建ERC20资产
- * 7. 构建原生代币资产
- * 8. 返回资产列表
- */
+interface AlchemyTokenBalance {
+  contractAddress: string;
+  tokenBalance: string;
+}
+
+interface AlchemyTokenBalancesResponse {
+  tokenBalances: AlchemyTokenBalance[];
+}
+
+interface AlchemyTokenMetadata {
+  name: string | null;
+  symbol: string | null;
+  decimals: number | null;
+  logo: string | null;
+}
+
+async function alchemyRpcCall(chainId: number, method: string, params: any[]): Promise<any> {
+  const rpcUrl = getRpcUrl(chainId);
+  if (!rpcUrl) {
+    throw new Error(`无法获取链 ${chainId} 的 RPC URL`);
+  }
+
+  const response = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method,
+      params,
+      id: 1,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Alchemy API HTTP error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  if (data.error) {
+    throw new Error(`Alchemy API error: ${data.error.message || JSON.stringify(data.error)}`);
+  }
+
+  return data.result;
+}
+
 async function fetchChainAssets(
   chainId: number,
   chainName: string,
@@ -25,63 +56,46 @@ async function fetchChainAssets(
 ): Promise<ChainQueryResult> {
   
   try {
-    // 1. 获取Alchemy实例
-    const settings = {
-      apiKey: dashboardConfig.alchemyApiKey,
-      network: getAlchemyNetworkEnum(chainId),
-    };
-    const alchemy = new Alchemy(settings);
-
-    // 2. 获取网络配置
     const networkConfig = dashboardConfig.networks.find(n => n.chain.id === chainId);
     if (!networkConfig) {
       throw new Error(`未找到链 ${chainId} 的配置`);
     }
 
-    // 3. 获取原生代币余额
-    // 4. 获取代币余额(使用type: TokenBalanceType.DEFAULT_TOKENS排除垃圾币)
-    const [nativeBalance, tokenBalancesResponse] = await Promise.all([
-      alchemy.core.getBalance(address),
-      alchemy.core.getTokenBalances(address, { type: TokenBalanceType.DEFAULT_TOKENS }),
+    const [nativeBalanceHex, tokenBalancesResponse] = await Promise.all([
+      alchemyRpcCall(chainId, 'eth_getBalance', [address, 'latest']),
+      alchemyRpcCall(chainId, 'alchemy_getTokenBalances', [address, 'DEFAULT_TOKENS']),
     ]);
 
-    // 5. 过滤出有余额的代币
-    const activeTokens = tokenBalancesResponse.tokenBalances.filter(token => {
+    const nativeBalance = nativeBalanceHex;
+    const tokenBalancesData = tokenBalancesResponse as AlchemyTokenBalancesResponse;
+
+    const activeTokens = tokenBalancesData.tokenBalances.filter(token => {
       return token.tokenBalance && token.tokenBalance !== "0x" && BigInt(token.tokenBalance) > 0;
     });
-    
-    // 6. 获取代币元数据
-    const tokenMetadataPromises = activeTokens.map(token =>
-      alchemy.core.getTokenMetadata(token.contractAddress)
-    );
-    const tokensMetadata = await Promise.all(tokenMetadataPromises);
 
-    // 7. 构建ERC20资产
+    const tokensMetadata: AlchemyTokenMetadata[] = await Promise.all(
+      activeTokens.map(token =>
+        alchemyRpcCall(chainId, 'alchemy_getTokenMetadata', [token.contractAddress])
+      )
+    );
+
     const erc20Assets: Asset[] = activeTokens.map((token, index) => {
       const meta = tokensMetadata[index];
 
-      // 三级 Fallback 策略获取高清 Logo
       let logo: string;
-      
-      // Tier 1: Trust Wallet Assets (高清首选，需要 Checksum 地址)
       const trustWalletChain = getTrustWalletChainName(chainId);
       if (trustWalletChain) {
         try {
           const checksumAddress = getAddress(token.contractAddress);
           logo = `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${trustWalletChain}/assets/${checksumAddress}/logo.png`;
         } catch {
-          // 如果地址转换失败，降级到 Tier 2
           logo = (meta.logo && meta.logo.trim() !== '')
             ? meta.logo
             : `https://icons.llamao.fi/icons/tokens/${chainId}/${token.contractAddress.toLowerCase()}`;
         }
-      } 
-      // Tier 2: Alchemy 元数据 logo
-      else if (meta.logo && meta.logo.trim() !== '') {
+      } else if (meta.logo && meta.logo.trim() !== '') {
         logo = meta.logo;
-      } 
-      // Tier 3: DefiLlama 兜底
-      else {
+      } else {
         logo = `https://icons.llamao.fi/icons/tokens/${chainId}/${token.contractAddress.toLowerCase()}`;
       }
 
@@ -106,14 +120,14 @@ async function fetchChainAssets(
       symbol: networkConfig.chain.nativeCurrency.symbol,
       name: networkConfig.chain.nativeCurrency.name,
       decimals: networkConfig.chain.nativeCurrency.decimals,
-      balance: nativeBalance.toString(),
-      formatted: formatUnits(BigInt(nativeBalance.toString()), networkConfig.chain.nativeCurrency.decimals),
+      balance: nativeBalance,
+      formatted: formatUnits(BigInt(nativeBalance), networkConfig.chain.nativeCurrency.decimals),
       logo: getNativeTokenLogo(chainId),
       isNative: true,
     };
 
     const chainAssets: Asset[] = [];
-    if (BigInt(nativeBalance.toString()) > 0) {
+    if (BigInt(nativeBalance) > 0) {
       chainAssets.push(nativeAsset);
     }
 
@@ -157,9 +171,8 @@ export async function fetchPortfolio({ address }: FetchPortfolioParams): Promise
   //将地址转换为小写
   const targetAddress = address.toLowerCase();
 
-  //判断Alchemy API Key是否为空
   if (!dashboardConfig.alchemyApiKey || dashboardConfig.alchemyApiKey === '') {
-    throw new Error("Alchemy API Key 未配置，请在 dashboard.config.ts 中设置");
+    throw new Error("Alchemy API Key 未配置，请在 .env.local 中设置 NEXT_PUBLIC_ALCHEMY_API_KEY");
   }
 
   const networks = dashboardConfig.networks.filter(n => n.enabled);
