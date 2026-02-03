@@ -1,7 +1,11 @@
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
-import { useMemo, useEffect, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { fetchPortfolio } from '@/services/portfolio';
-import { fetchTokenPrices } from '@/services/price';
+import { 
+  fetchCurrentPricesBatch, 
+  retryFailedPrices,
+  type TokenPrice 
+} from '@/services/price-current-ha';
 import { dashboardConfig } from '@/config/dashboard.config';
 import type { Asset } from '@/types/assets';
 
@@ -11,89 +15,28 @@ export function getPortfolioQueryKey(address?: string) {
 
 export function getPricesQueryKey(assets: Asset[]) {
   const assetIds = assets.map(a => a.uniqueId).sort().join(',');
-  return ['token-prices', assetIds] as const;
+  return ['token-prices-ha', assetIds] as const;
 }
+
+// 价格状态类型
+export type PriceState = 
+  | { status: 'loading'; price?: undefined }
+  | { status: 'success'; price: number }
+  | { status: 'failed'; price?: undefined };
 
 function usePortfolioQuery(
   address: string | undefined,
   isConnected: boolean = false,
-  options?: Omit<UseQueryOptions<Asset[], Error>, 'queryKey' | 'queryFn' | 'enabled'>
 ) {
-  
   const { refresh, cache, retry } = dashboardConfig;
 
   return useQuery({
     queryKey: getPortfolioQueryKey(address),
     queryFn: () => fetchPortfolio({ address: address! }),
-    enabled: isConnected && !!address && address.length > 0, 
-    staleTime: cache.enabled ? cache.staleTime : 0, 
-    gcTime: cache.enabled ? cache.gcTime : 0, 
-    refetchInterval: refresh.portfolio, 
-    refetchOnWindowFocus: cache.refetchOnWindowFocus, 
-    refetchOnReconnect: cache.refetchOnReconnect, 
-    retry: retry.maxRetries, 
-    retryDelay: (attemptIndex) => {
-      
-      if (retry.exponentialBackoff) {
-        return Math.min(1000 * 2 ** attemptIndex, 30000);
-      }
-      return retry.retryDelay;
-    },
-    ...options, 
-  });
-}
-
-function usePricesQuery(assets: Asset[], enabled: boolean = true) {
-  const { refresh, cache, retry } = dashboardConfig;
-
-  const queryKey = getPricesQueryKey(assets);
-  const finalEnabled = enabled && assets.length > 0;
-
-  useEffect(() => {
-    if (finalEnabled) {
-      console.log(`[usePricesQuery] 🔄 价格查询已配置 - assets.length: ${assets.length}, refetchInterval: ${refresh.price}ms`);
-      console.log(`[usePricesQuery] Query Key:`, queryKey);
-    }
-  }, [assets.length, finalEnabled, refresh.price, queryKey]);
-
-  const queryCountMapRef = useRef(new Map<string, number>());
-
-  useEffect(() => {
-    if (finalEnabled) {
-      console.log(`[usePricesQuery] ⚙️ 查詢配置 - refetchInterval: ${refresh.price}ms, staleTime: 0, enabled: ${finalEnabled}`);
-    }
-  }, [finalEnabled, refresh.price]);
-
-  return useQuery({
-    queryKey,
-    queryFn: async () => {
-      const queryKeyStr = JSON.stringify(queryKey);
-      const currentCount = (queryCountMapRef.current.get(queryKeyStr) || 0) + 1;
-      queryCountMapRef.current.set(queryKeyStr, currentCount);
-      
-      const isInitialQuery = currentCount === 1;
-      const queryType = isInitialQuery ? '🔄 初始查询' : `⏰ 自动刷新 #${currentCount - 1}`;
-      
-      const startTime = Date.now();
-      const timestamp = new Date().toLocaleTimeString();
-      console.log(`[价格查询] ${queryType} - 时间: ${timestamp}, 资产数量: ${assets.length}, 法币: USD`);
-      
-      try {
-        const result = await fetchTokenPrices(assets);
-        const duration = Date.now() - startTime;
-        const priceCount = Object.keys(result).length;
-        console.log(`[价格查询] ✅ ${queryType}完成 - 时间: ${timestamp}, 耗时: ${duration}ms, 获取到 ${priceCount} 个价格`);
-        return result;
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        console.error(`[价格查询] ❌ ${queryType}失败 - 时间: ${timestamp}, 耗时: ${duration}ms`, error);
-        throw error;
-      }
-    },
-    enabled: finalEnabled, 
-    staleTime: 0, 
+    enabled: isConnected && !!address && address.length > 0,
+    staleTime: cache.enabled ? cache.staleTime : 0,
     gcTime: cache.enabled ? cache.gcTime : 0,
-    refetchInterval: finalEnabled ? refresh.price : false, 
+    refetchInterval: refresh.portfolio,
     refetchOnWindowFocus: cache.refetchOnWindowFocus,
     refetchOnReconnect: cache.refetchOnReconnect,
     retry: retry.maxRetries,
@@ -106,9 +49,105 @@ function usePricesQuery(assets: Asset[], enabled: boolean = true) {
   });
 }
 
+function usePricesQueryHA(
+  assets: Asset[],
+  enabled: boolean = true
+) {
+  const { cache } = dashboardConfig;
+  const queryClient = useQueryClient();
+  const retryingAssetsRef = useRef(new Set<string>());
+
+  const queryKey = useMemo(() => {
+    return getPricesQueryKey(assets);
+  }, [assets]);
+
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      console.log(`[usePricesQueryHA] 开始获取 ${assets.length} 个代币价格`);
+      
+      // 第一阶段：批量获取
+      const { prices, failedAssets } = await fetchCurrentPricesBatch(assets);
+
+      // 如果有失败的，启动后台重试
+      if (failedAssets.length > 0) {
+        console.log(`[usePricesQueryHA] ${failedAssets.length} 个代币需要后台重试`);
+        
+        // 后台重试（不阻塞返回）
+        setTimeout(() => {
+          retryFailedPrices(failedAssets, (uniqueId, price) => {
+            if (!retryingAssetsRef.current.has(uniqueId)) {
+              retryingAssetsRef.current.add(uniqueId);
+              
+              // 更新缓存
+              queryClient.setQueryData(queryKey, (oldData: Record<string, TokenPrice> | undefined) => ({
+                ...oldData,
+                [uniqueId]: price,
+              }));
+              
+              retryingAssetsRef.current.delete(uniqueId);
+              console.log(`[usePricesQueryHA] ${price.symbol} 后台重试成功，UI已更新`);
+            }
+          });
+        }, 100);
+      }
+
+      return prices;
+    },
+    enabled: enabled && assets.length > 0,
+    staleTime: 0, // 价格实时性要求高
+    gcTime: cache.enabled ? cache.gcTime : 0,
+    refetchInterval: enabled ? dashboardConfig.refresh.price : false,
+    refetchOnWindowFocus: cache.refetchOnWindowFocus,
+    refetchOnReconnect: cache.refetchOnReconnect,
+    retry: 1, // 由服务层处理重试
+  });
+
+  // 构建状态映射
+  const stateMap = useMemo(() => {
+    const map = new Map<string, PriceState>();
+
+    assets.forEach((asset) => {
+      // 正在重试中 = loading
+      if (retryingAssetsRef.current.has(asset.uniqueId)) {
+        map.set(asset.uniqueId, { status: 'loading' });
+        return;
+      }
+
+      // 数据未加载 = loading
+      if (query.isLoading) {
+        map.set(asset.uniqueId, { status: 'loading' });
+        return;
+      }
+
+      const priceData = query.data?.[asset.uniqueId];
+      
+      if (priceData) {
+        map.set(asset.uniqueId, { 
+          status: 'success', 
+          price: priceData.price 
+        });
+      } else {
+        map.set(asset.uniqueId, { status: 'failed' });
+      }
+    });
+
+    return map;
+  }, [assets, query.data, query.isLoading]);
+
+  const getPriceState = useCallback((uniqueId: string): PriceState => {
+    return stateMap.get(uniqueId) ?? { status: 'failed' };
+  }, [stateMap]);
+
+  return {
+    ...query,
+    getPriceState,
+    stateMap,
+  };
+}
+
 export const usePortfolio = (address?: string, isConnected?: boolean) => {
   const portfolioQuery = usePortfolioQuery(address, isConnected ?? false);
-
   const assets = useMemo(() => portfolioQuery.data ?? [], [portfolioQuery.data]);
 
   const prevAssetsLengthRef = useRef(assets.length);
@@ -130,63 +169,40 @@ export const usePortfolio = (address?: string, isConnected?: boolean) => {
 
   const pricesEnabled = portfolioQuery.isSuccess && assets.length > 0;
 
-  useEffect(() => {
-    if (portfolioQuery.isSuccess && assets.length > 0) {
-      console.log(`[usePortfolio] ✅ 价格查询已启用 - portfolioQuery.isSuccess: ${portfolioQuery.isSuccess}, assets.length: ${assets.length}`);
-    } else {
-      console.log(`[usePortfolio] ⏸️ 价格查询未启用 - portfolioQuery.isSuccess: ${portfolioQuery.isSuccess}, assets.length: ${assets.length}`);
-    }
-  }, [portfolioQuery.isSuccess, assets.length]);
+  // 使用高可用价格查询
+  const pricesQuery = usePricesQueryHA(assets, pricesEnabled);
 
-  const pricesQuery = usePricesQuery(assets, pricesEnabled);
-
-  const prevPriceIsLoadingRef = useRef(pricesQuery.isLoading);
-  const prevPriceIsSuccessRef = useRef(pricesQuery.isSuccess);
-  const prevPriceIsFetchingRef = useRef(pricesQuery.isFetching);
-  const prevPriceDataRef = useRef(pricesQuery.data);
-
-  useEffect(() => {
-    const loadingChanged = prevPriceIsLoadingRef.current !== pricesQuery.isLoading;
-    const successChanged = prevPriceIsSuccessRef.current !== pricesQuery.isSuccess;
-    const fetchingChanged = prevPriceIsFetchingRef.current !== pricesQuery.isFetching;
-    const dataChanged = prevPriceDataRef.current !== pricesQuery.data;
-
-    if (loadingChanged || successChanged || fetchingChanged || dataChanged) {
-      const dataStatus = pricesQuery.data ? `有数据(${Object.keys(pricesQuery.data).length}个价格)` : '无数据';
-      console.log(`[usePortfolio] 💰 价格查询状态变化 - isLoading: ${pricesQuery.isLoading}, isSuccess: ${pricesQuery.isSuccess}, isError: ${pricesQuery.isError}, isFetching: ${pricesQuery.isFetching}, ${dataStatus}`);
-      prevPriceIsLoadingRef.current = pricesQuery.isLoading;
-      prevPriceIsSuccessRef.current = pricesQuery.isSuccess;
-      prevPriceIsFetchingRef.current = pricesQuery.isFetching;
-      prevPriceDataRef.current = pricesQuery.data;
-    }
-  }, [pricesQuery.isLoading, pricesQuery.isSuccess, pricesQuery.isError, pricesQuery.isFetching, pricesQuery.data]);
-
+  // 合并资产和价格数据
   const assetsWithPrices = useMemo(() => {
-    if (!pricesQuery.data) {
-      return assets; 
-    }
-
-    const prices = pricesQuery.data;
-
     return assets.map((asset) => {
-      const price = prices[asset.uniqueId];
-      const value = price && asset.formatted
-        ? parseFloat(asset.formatted) * price
-        : undefined;
-
+      const priceState = pricesQuery.getPriceState(asset.uniqueId);
+      
       return {
         ...asset,
-        price,
-        value,
+        price: priceState.status === 'success' ? priceState.price : undefined,
+        value: priceState.status === 'success' && asset.formatted
+          ? parseFloat(asset.formatted) * priceState.price
+          : undefined,
+        priceStatus: priceState.status,
       };
     });
-  }, [assets, pricesQuery.data]);
+  }, [assets, pricesQuery]);
 
   const totalValue = useMemo(() => {
     return assetsWithPrices.reduce((sum, asset) => {
       return sum + (asset.value ?? 0);
     }, 0);
   }, [assetsWithPrices]);
+
+  // 统计价格状态
+  const priceStats = useMemo(() => {
+    const stats = { success: 0, loading: 0, failed: 0 };
+    assets.forEach(asset => {
+      const state = pricesQuery.getPriceState(asset.uniqueId);
+      stats[state.status]++;
+    });
+    return stats;
+  }, [assets, pricesQuery]);
 
   return {
     data: assetsWithPrices,
@@ -202,11 +218,10 @@ export const usePortfolio = (address?: string, isConnected?: boolean) => {
       portfolioQuery.refetch();
       pricesQuery.refetch();
     },
-    
     isError: portfolioQuery.isError || pricesQuery.isError,
     isSuccess: portfolioQuery.isSuccess && pricesQuery.isSuccess,
     isFetching: portfolioQuery.isFetching || pricesQuery.isFetching,
-    
+    priceStats,
     portfolioStatus: {
       isLoading: portfolioQuery.isLoading,
       isError: portfolioQuery.isError,
@@ -216,7 +231,10 @@ export const usePortfolio = (address?: string, isConnected?: boolean) => {
       isLoading: pricesQuery.isLoading,
       isError: pricesQuery.isError,
       isSuccess: pricesQuery.isSuccess,
+      successCount: priceStats.success,
+      failedCount: priceStats.failed,
     },
+    getPriceState: pricesQuery.getPriceState,
   };
 };
 

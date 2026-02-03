@@ -1,4 +1,9 @@
 /**
+ * 价格获取状态
+ */
+export type PriceStatus = 'loading' | 'success' | 'failed';
+
+/**
  * 资产类型
  * 包含：该资产唯一id(所在链id-合约地址)、所在链id、合约地址、符号、名称、小数位、余额、格式化后的余额、图标、是否原生代币、价格、价值
  */
@@ -14,7 +19,9 @@ export type Asset = {
   logo?: string;
   isNative: boolean;
   price?: number; 
-  value?: number; 
+  value?: number;
+  /** 当前价格获取状态 */
+  priceStatus?: PriceStatus;
 };
 
 /**
@@ -52,4 +59,6 @@ export type GroupedAsset = {
   assets: Asset[];
   /** 该分组是否全部为测试网资产（总净值不计入） */
   isTestnet?: boolean;
+  /** 7天价格历史数据（用于趋势图表） */
+  priceHistory7d?: number[];
 };

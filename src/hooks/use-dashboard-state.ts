@@ -8,7 +8,9 @@ import { isTestnetChain } from "@/utils/asset-utils";
 import { useAggregatedPortfolio } from "./useAggregatedPortfolio";
 import { useChainAssets } from "./use-chain-assets";
 import { useGasPrice } from "./use-gas-price";
-import type { GroupedAsset } from "@/types/assets";
+import { useAggregatedPriceHistories } from "./use-price-history";
+import type { GroupedAsset, Asset, PriceStatus } from "@/types/assets";
+import type { PriceState } from "./usePortfolio";
 
 /**
  * 链信息类型
@@ -23,6 +25,16 @@ export type ChainInfo = {
 };
 
 /**
+ * 历史价格状态
+ */
+export type PriceHistoryStatus = 'loading' | 'success' | 'failed';
+
+/**
+ * 当前价格状态
+ */
+export type CurrentPriceStatus = 'loading' | 'success' | 'failed';
+
+/**
  * Dashboard 资产类型（带 Networks 列支持）
  *
  * 说明：这是为 Dashboard UI 定制的资产类型
@@ -35,10 +47,18 @@ export type DashboardAsset = {
   logo: string;
   price: number;
   priceChange24h: number;
+  /** 7天价格变化百分比（根据 priceHistory7d 计算） */
+  priceChange7d: number;
   balance: number;
   value: number;
   chains: string[];
   isTestnet?: boolean;
+  /** 7天价格历史数据（用于趋势图表） */
+  priceHistory7d?: number[];
+  /** 历史价格获取状态：loading = 获取中，success = 成功，failed = 失败 */
+  priceHistoryStatus: PriceHistoryStatus;
+  /** 当前价格获取状态：loading = 获取中，success = 成功，failed = 失败 */
+  priceStatus: CurrentPriceStatus;
 };
 
 /**
@@ -51,6 +71,7 @@ export type DashboardState = {
   assets: DashboardAsset[];
   chains: ChainInfo[];
   selectedChain: string;
+  /** 主数据加载状态（资产、价格等） */
   isLoading: boolean;
   showTestnets: boolean;
 };
@@ -60,7 +81,6 @@ export type DashboardState = {
  */
 export type UseDashboardStateReturn = DashboardState & {
   setSelectedChain: (chainId: string) => void;
-  showTestnets: boolean;
   setShowTestnets: (value: boolean) => void;
   filteredAssets: DashboardAsset[];
   refetch: () => void;
@@ -130,22 +150,83 @@ function buildChainsFromConfig(): ChainInfo[] {
 const ALL_CHAINS = buildChainsFromConfig();
 
 /**
+ * 获取聚合资产的价格和价值
+ * 使用高可用价格查询的结果
+ */
+function getGroupedAssetPriceAndValue(
+  groupedAsset: GroupedAsset,
+  getPriceState: (uniqueId: string) => PriceState
+): { price: number; value: number; priceStatus: CurrentPriceStatus } {
+  if (groupedAsset.assets.length === 0) {
+    return { price: 0, value: 0, priceStatus: 'failed' };
+  }
+
+  // 查找成功的资产价格
+  let successPrice = 0;
+  let hasSuccess = false;
+  let hasLoading = false;
+
+  for (const asset of groupedAsset.assets) {
+    const priceState = getPriceState(asset.uniqueId);
+    if (priceState.status === 'success' && priceState.price > 0) {
+      successPrice = priceState.price;
+      hasSuccess = true;
+      break; // 找到成功的价格就使用
+    } else if (priceState.status === 'loading') {
+      hasLoading = true;
+    }
+  }
+
+  if (hasSuccess) {
+    const totalBalance = parseFloat(groupedAsset.totalBalance) || 0;
+    const value = totalBalance * successPrice;
+    return {
+      price: successPrice,
+      value,
+      priceStatus: 'success' as CurrentPriceStatus,
+    };
+  }
+
+  if (hasLoading) {
+    return { price: 0, value: 0, priceStatus: 'loading' as CurrentPriceStatus };
+  }
+
+  // 所有价格都获取失败了
+  return {
+    price: 0,
+    value: groupedAsset.totalValue,
+    priceStatus: 'failed' as CurrentPriceStatus,
+  };
+}
+
+/**
  * 将 GroupedAsset 转换为 DashboardAsset
+ * @param groupedAsset 聚合资产
+ * @param historyState 历史价格状态
+ * @param getPriceState 获取单个资产价格状态的函数
  */
 function convertGroupedAssetToDashboardAsset(
   groupedAsset: GroupedAsset,
+  historyState: { status: PriceHistoryStatus; trend?: number[]; change7d?: number },
+  getPriceState: (uniqueId: string) => PriceState,
 ): DashboardAsset {
+  const { price, value, priceStatus } = getGroupedAssetPriceAndValue(groupedAsset, getPriceState);
+
   return {
     id: groupedAsset.symbol,
     symbol: groupedAsset.symbol,
     name: groupedAsset.name,
     logo: groupedAsset.logo ?? "",
-    price: groupedAsset.averagePrice,
+    price: priceStatus === 'success' ? price : groupedAsset.averagePrice,
     priceChange24h: 0,
+    priceChange7d: historyState.change7d ?? 0,
     balance: parseFloat(groupedAsset.totalBalance) || 0,
-    value: groupedAsset.totalValue,
+    value: value,
     chains: groupedAsset.chains.map((chainId) => String(chainId)),
     isTestnet: groupedAsset.isTestnet,
+    priceHistory7d: historyState.trend,
+    priceHistoryStatus: historyState.status,
+    priceStatus,
   };
 }
 
@@ -171,10 +252,16 @@ export function useDashboardState(
   const effectiveAddress = overrideAddress ?? walletAddress ?? undefined;
   const effectiveConnected = overrideAddress ? true : isConnected;
 
-  const { aggregatedData, isLoading, refetch } = useAggregatedPortfolio(
+  const { aggregatedData, isLoading, refetch, rawData, getPriceState } = useAggregatedPortfolio(
     effectiveAddress,
     effectiveConnected,
     showTestnets,
+  );
+
+  // 获取历史价格数据（用于 7d Trend 图表）
+  const { getStateBySymbol } = useAggregatedPriceHistories(
+    rawData,
+    effectiveConnected && rawData.length > 0
   );
 
   // 单链资产筛选：一次拉取、前端筛选，无额外请求
@@ -193,13 +280,27 @@ export function useDashboardState(
 
   // 全部资产（Dashboard 格式，供链筛选等使用）
   const assets: DashboardAsset[] = useMemo(() => {
-    return aggregatedData.map(convertGroupedAssetToDashboardAsset);
-  }, [aggregatedData]);
+    return aggregatedData.map((asset) => {
+      const historyState = getStateBySymbol(asset.symbol);
+      return convertGroupedAssetToDashboardAsset(asset, {
+        status: historyState.status,
+        trend: historyState.trend,
+        change7d: historyState.change7d,
+      }, getPriceState);
+    });
+  }, [aggregatedData, getStateBySymbol, getPriceState]);
 
   // 当前展示的资产（经 useChainAssets 筛选/拆包后转 Dashboard 格式）
   const filteredAssets = useMemo(() => {
-    return displayedAssets.map(convertGroupedAssetToDashboardAsset);
-  }, [displayedAssets]);
+    return displayedAssets.map((asset) => {
+      const historyState = getStateBySymbol(asset.symbol);
+      return convertGroupedAssetToDashboardAsset(asset, {
+        status: historyState.status,
+        trend: historyState.trend,
+        change7d: historyState.change7d,
+      }, getPriceState);
+    });
+  }, [displayedAssets, getStateBySymbol, getPriceState]);
 
   const totalNetWorth = chainNetWorth;
 

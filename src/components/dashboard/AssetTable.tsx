@@ -11,21 +11,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { TrendLine } from "@/components/dashboard/TrendLine";
+import { TrendLine, PriceChangeIndicator } from "@/components/dashboard/TrendLine";
 import { ChevronUp } from "lucide-react";
 import type { DashboardAsset, ChainInfo } from "@/hooks/use-dashboard-state";
 import { BlurFade } from "@/components/magicui/blur-fade";
 
-/** 为单个资产生成 7 天 mock 价格（用于 7d Trend 预览，后端未提供历史数据时；同 assetId 同会话内稳定） */
-function getMockTrendData(assetId: string): number[] {
-  let seed = 0;
-  for (let i = 0; i < assetId.length; i++) seed += assetId.charCodeAt(i);
-  const rng = () => {
-    seed = (seed * 9301 + 49297) % 233280;
-    return seed / 233280;
-  };
-  return Array.from({ length: 7 }, () => rng() * 100);
-}
+
 
 /**
  * AssetTable 组件 Props
@@ -35,30 +26,59 @@ interface AssetTableProps {
   assets: DashboardAsset[];
   /** 链信息映射（用于显示 Networks 列） */
   chains: ChainInfo[];
-  /** 是否加载中 */
+  /** 主数据是否加载中（资产、价格等） */
   isLoading?: boolean;
 }
 
 /**
- * 格式化价格显示
+ * 格式化价格显示 - 支持科学记数法
  */
-function formatPrice(price: number): string {
+function formatPrice(price: number | undefined | null): string {
+  if (price === undefined || price === null || price <= 0) {
+    return "暂无价格";
+  }
+  
+  // 极小金额使用科学记数法
+  if (price < 0.0001) {
+    return `$${price.toExponential(4)}`;
+  }
+  
+  if (price >= 1000000000) {
+    return `$${price.toExponential(2)}`;
+  }
+  
   if (price >= 1000) {
     return `$${price.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
   }
+  
   if (price >= 1) {
     return `$${price.toFixed(2)}`;
   }
+  
   return `$${price.toFixed(4)}`;
 }
 
 /**
- * 格式化价值显示
+ * 格式化价值显示 - 支持科学记数法
  */
 function formatValue(value: number): string {
+  if (value <= 0) {
+    return "$0.00";
+  }
+  
+  // 极小金额使用科学记数法
+  if (value < 0.01) {
+    return `<$${value.toExponential(2)}`;
+  }
+  
+  // 极大金额使用科学记数法
+  if (value >= 1000000000) {
+    return `$${value.toExponential(2)}`;
+  }
+  
   return `$${value.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -66,21 +86,33 @@ function formatValue(value: number): string {
 }
 
 /**
- * 格式化余额显示
+ * 格式化余额显示 - 支持科学记数法
  */
 function formatBalance(balance: number): string {
+  if (balance <= 0) {
+    return "0";
+  }
+  
+  // 极小金额使用科学记数法
+  if (balance < 0.000001) {
+    return balance.toExponential(4);
+  }
+  
   if (balance >= 1000000) {
     return `${(balance / 1000000).toFixed(2)}M`;
   }
+  
   if (balance >= 1000) {
     return `${balance.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
   }
+  
   if (balance >= 1) {
     return balance.toFixed(4);
   }
+  
   return balance.toFixed(6);
 }
 
@@ -140,26 +172,7 @@ function NetworkIcons({
   );
 }
 
-/**
- * 价格变化指示器
- */
-function PriceChangeIndicator({ change }: { change: number }) {
-  const isPositive = change >= 0;
 
-  return (
-    <span
-      className={cn(
-        "font-inter text-sm font-semibold tabular-nums",
-        isPositive 
-          ? "text-emerald-600 dark:text-emerald-400" 
-          : "text-red-600 dark:text-red-400"
-      )}
-    >
-      {isPositive ? "+" : ""}
-      {change.toFixed(2)}%
-    </span>
-  );
-}
 
 /**
  * 资产表格组件 - CoinGecko 极简风格
@@ -242,17 +255,38 @@ export function AssetTable({ assets, chains, isLoading }: AssetTableProps) {
               {/* 7d Trend - 移动端隐藏 */}
               <TableCell className="hidden w-[100px] min-w-[100px] align-middle md:table-cell md:text-right">
                 <div className="flex justify-end">
-                  <TrendLine data={getMockTrendData(asset.id)} />
+                  <TrendLine 
+                    data={asset.priceHistory7d ?? []} 
+                    status={asset.priceHistoryStatus}
+                  />
                 </div>
               </TableCell>
 
               {/* Price */}
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
-                  <span className="font-inter font-semibold tabular-nums text-foreground">
-                    {formatPrice(asset.price)}
-                  </span>
-                  <PriceChangeIndicator change={asset.priceChange24h} />
+                  {/* 当前价格 */}
+                  {asset.priceStatus === 'loading' ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+                    </div>
+                  ) : asset.priceStatus === 'failed' || (asset.priceStatus === 'success' && (!asset.price || asset.price <= 0)) ? (
+                    <span className="font-inter font-semibold tabular-nums text-muted-foreground/60">
+                      暂无价格
+                    </span>
+                  ) : (
+                    <span className="font-inter font-semibold tabular-nums text-foreground">
+                      {formatPrice(asset.price)}
+                    </span>
+                  )}
+                  {/* 7天变化百分比 */}
+                  {asset.priceHistoryStatus === 'loading' ? (
+                    <span className="text-sm text-muted-foreground">-</span>
+                  ) : asset.priceHistoryStatus === 'failed' ? (
+                    <span className="text-sm text-muted-foreground/60">-</span>
+                  ) : (
+                    <PriceChangeIndicator change={asset.priceChange7d} />
+                  )}
                 </div>
               </TableCell>
 

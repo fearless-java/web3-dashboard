@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { usePortfolio } from './usePortfolio';
+import { usePortfolio, type PriceState } from './usePortfolio';
 import { groupAssetsBySymbol } from '@/utils/asset-utils';
-import type { Asset, GroupedAsset } from '@/types/assets';
+import type { Asset, GroupedAsset, PriceStatus } from '@/types/assets';
 
 export interface UseAggregatedPortfolioReturn {
   
@@ -33,7 +33,12 @@ export interface UseAggregatedPortfolioReturn {
     isLoading: boolean;
     isError: boolean;
     isSuccess: boolean;
+    successCount: number;
+    failedCount: number;
   };
+
+  /** 获取单个资产的价格状态 */
+  getPriceState: (uniqueId: string) => PriceState;
 }
 
 export function useAggregatedPortfolio(
@@ -51,6 +56,7 @@ export function useAggregatedPortfolio(
     refetch,
     portfolioStatus,
     pricesStatus,
+    getPriceState,
   } = usePortfolio(address, isConnected);
 
   const { aggregatedData, totalValue } = useMemo(() => {
@@ -81,6 +87,7 @@ export function useAggregatedPortfolio(
     totalValue,
     portfolioStatus,
     pricesStatus,
+    getPriceState,
   };
 }
 
