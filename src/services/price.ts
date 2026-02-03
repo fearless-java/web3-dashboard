@@ -1,5 +1,6 @@
-import type { Asset } from '@/types/assets';
-import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/constants/chains';
+import type { Asset } from '@/types';
+import { NATIVE_TOKEN_MAP } from '@/constants/chains';
+import { getNetworkConfig } from '@/utils/network';
 
 // DefiLlama API 基础URL
 const DEFILLAMA_API_BASE = 'https://coins.llama.fi';
@@ -15,7 +16,8 @@ type DefiLlamaPriceResponse = {
  * 例如: ethereum:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
  */
 function assetToLlamaKey(asset: Asset): string | null {
-  const chainName = LLAMA_CHAIN_MAP[asset.chainId];
+  const networkConfig = getNetworkConfig(asset.chainId);
+  const chainName = networkConfig?.defiLlamaKey;
   if (!chainName) {
     return null; // 不支持的链
   }

@@ -1,39 +1,30 @@
-import type { Asset } from '@/types/assets';
-import type { TokenPriceHistory, PriceHistoryPoint } from './price-history';
-import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/constants/chains';
+import type { Asset } from '@/types';
+import type { TokenPriceHistory } from './price-history';
+import { NATIVE_TOKEN_MAP } from '@/constants/chains';
 import { isTestnetChain } from '@/utils/asset-utils';
+import { getNetworkConfig } from '@/utils/network';
 
 // ============ 配置 ============
 const CONFIG = {
-  // 重试配置
-  retry: {
-    maxRetries: 3,
-    delayMs: 1000,
-    backoffMultiplier: 2,
-  },
-  // 超时配置
+  // 超时配置 - 缩短超时，快速失败
   timeout: {
-    defillama: 10000,
-    coingecko: 8000,
+    defillama: 4000,
+    coingecko: 3000,
   },
 };
 
 // ============ 数据源 1: DefiLlama ============
 
-/**
- * DefiLlama 图表 API 响应类型
- */
 type DefiLlamaChartResponse = {
   coins: Record<string, {
     symbol: string;
-    decimals?: number;
-    confidence?: number;
     prices: { timestamp: number; price: number }[];
   }>;
 };
 
-async function fetchFromDefiLlama(asset: Asset): Promise<TokenPriceHistory | null> {
-  const chainName = LLAMA_CHAIN_MAP[asset.chainId];
+function assetToLlamaKey(asset: Asset): string | null {
+  const networkConfig = getNetworkConfig(asset.chainId);
+  const chainName = networkConfig?.defiLlamaKey;
   if (!chainName) return null;
 
   let address = asset.address.toLowerCase();
@@ -45,10 +36,14 @@ async function fetchFromDefiLlama(asset: Asset): Promise<TokenPriceHistory | nul
   if (!address.startsWith('0x')) {
     address = '0x' + address;
   }
+  return `${chainName}:${address}`;
+}
 
-  const llamaKey = `${chainName}:${address}`;
+async function fetchFromDefiLlama(asset: Asset): Promise<TokenPriceHistory | null> {
+  const llamaKey = assetToLlamaKey(asset);
+  if (!llamaKey) return null;
+
   const url = `https://coins.llama.fi/chart/${llamaKey}?span=7`;
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CONFIG.timeout.defillama);
 
@@ -83,51 +78,19 @@ async function fetchFromDefiLlama(asset: Asset): Promise<TokenPriceHistory | nul
 
 // ============ 数据源 2: CoinGecko (备选) ============
 
-/**
- * CoinGecko 平台映射
- */
-const COINGECKO_PLATFORM_MAP: Record<number, string> = {
-  1: 'ethereum',
-  56: 'binance-smart-chain',
-  137: 'polygon-pos',
-  10: 'optimistic-ethereum',
-  42161: 'arbitrum-one',
-  8453: 'base',
-  43114: 'avalanche',
-};
-
-/**
- * 常见代币的 CoinGecko ID 映射
- */
 const COINGECKO_ID_MAP: Record<string, string> = {
-  'ETH': 'ethereum',
-  'WETH': 'weth',
-  'USDC': 'usd-coin',
-  'USDT': 'tether',
-  'DAI': 'dai',
-  'WBTC': 'wrapped-bitcoin',
-  'BTC': 'bitcoin',
-  'LINK': 'chainlink',
-  'UNI': 'uniswap',
-  'AAVE': 'aave',
-  'CRV': 'curve-dao-token',
-  'MATIC': 'matic-network',
-  'POL': 'polygon-ecosystem-token',
-  'BNB': 'binancecoin',
-  'AVAX': 'avalanche-2',
-  'OP': 'optimism',
-  'ARB': 'arbitrum',
+  'ETH': 'ethereum', 'WETH': 'weth', 'USDC': 'usd-coin', 'USDT': 'tether',
+  'DAI': 'dai', 'WBTC': 'wrapped-bitcoin', 'BTC': 'bitcoin', 'LINK': 'chainlink',
+  'UNI': 'uniswap', 'AAVE': 'aave', 'MATIC': 'matic-network',
+  'POL': 'polygon-ecosystem-token', 'BNB': 'binancecoin', 'AVAX': 'avalanche-2',
+  'OP': 'optimism', 'ARB': 'arbitrum', 'BASE': 'base',
+  'STETH': 'staked-ether', 'RETH': 'rocket-pool-eth', 'LDO': 'lido-dao',
+  'CRV': 'curve-dao-token', 'GMX': 'gmx', 'PEPE': 'pepe',
+  '1INCH': '1inch', 'ENJ': 'enjincoin', 'FXS': 'frax-share',
 };
 
 async function fetchFromCoinGecko(asset: Asset): Promise<TokenPriceHistory | null> {
-  // 1. 获取 CoinGecko ID
-  let coinId = COINGECKO_ID_MAP[asset.symbol.toUpperCase()];
-  
-  // 2. 如果映射中没有，尝试使用 symbol 小写
-  if (!coinId) {
-    coinId = asset.symbol.toLowerCase();
-  }
-
+  const coinId = COINGECKO_ID_MAP[asset.symbol.toUpperCase()] || asset.symbol.toLowerCase();
   const url = `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=usd&days=7`;
 
   const controller = new AbortController();
@@ -141,10 +104,6 @@ async function fetchFromCoinGecko(asset: Asset): Promise<TokenPriceHistory | nul
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      // 429 = 速率限制
-      if (response.status === 429) {
-        console.warn(`[CoinGecko] 速率限制: ${asset.symbol}`);
-      }
       return null;
     }
 
@@ -168,106 +127,45 @@ async function fetchFromCoinGecko(asset: Asset): Promise<TokenPriceHistory | nul
   }
 }
 
-// ============ 带重试的获取 ============
+// ============ 辅助函数 ============
 
-async function fetchWithRetry<T>(
-  fn: () => Promise<T | null>,
-  name: string,
-  maxRetries: number = CONFIG.retry.maxRetries
-): Promise<T | null> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const result = await fn();
-      if (result !== null) {
-        if (attempt > 0) {
-          console.log(`[${name}] 第 ${attempt + 1} 次尝试成功`);
-        }
-        return result;
-      }
-      // 返回 null 但不是错误，继续重试
-      console.warn(`[${name}] 第 ${attempt + 1} 次尝试返回空数据`);
-    } catch (error) {
-      lastError = error;
-      console.warn(`[${name}] 第 ${attempt + 1} 次尝试失败:`, error);
-    }
-
-    // 计算延迟（指数退避）
-    if (attempt < maxRetries - 1) {
-      const delay = CONFIG.retry.delayMs * Math.pow(CONFIG.retry.backoffMultiplier, attempt);
-      console.log(`[${name}] ${delay}ms 后重试...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  console.error(`[${name}] 所有 ${maxRetries} 次尝试均失败`);
-  return null;
-}
-
-// ============ 主入口 ============
-
-/**
- * 检查资产是否支持历史价格查询
- */
 function isAssetSupported(asset: Asset): boolean {
   if (isTestnetChain(asset.chainId)) return false;
-  if (!LLAMA_CHAIN_MAP[asset.chainId]) return false;
+  const networkConfig = getNetworkConfig(asset.chainId);
+  if (!networkConfig?.defiLlamaKey) return false;
   return true;
 }
 
+// ============ 主入口：完全并行获取 ============
+
 /**
- * 高可用：获取代币 7 天历史价格
- * 策略：
- * 1. 首先尝试 DefiLlama（带 3 次重试）
- * 2. 如果失败，尝试 CoinGecko（带 2 次重试）
- * 3. 如果都失败，返回 null
+ * 获取单个代币历史价格
  */
 export async function fetchTokenPriceHistoryHA(
   asset: Asset
 ): Promise<TokenPriceHistory | null> {
-  // 前置过滤
   if (!isAssetSupported(asset)) {
     return null;
   }
 
-  console.log(`[fetchTokenPriceHistoryHA] 开始获取 ${asset.symbol} 历史价格`);
-
-  // 数据源 1: DefiLlama (主要)
-  const defillamaResult = await fetchWithRetry(
-    () => fetchFromDefiLlama(asset),
-    `DefiLlama-${asset.symbol}`,
-    3
-  );
-
+  // 先尝试 DefiLlama
+  const defillamaResult = await fetchFromDefiLlama(asset);
   if (defillamaResult) {
-    console.log(`[fetchTokenPriceHistoryHA] ${asset.symbol} 从 DefiLlama 获取成功`);
     return defillamaResult;
   }
 
-  // 数据源 2: CoinGecko (备选)
-  console.log(`[fetchTokenPriceHistoryHA] ${asset.symbol} DefiLlama 失败，尝试 CoinGecko...`);
-  const coingeckoResult = await fetchWithRetry(
-    () => fetchFromCoinGecko(asset),
-    `CoinGecko-${asset.symbol}`,
-    2
-  );
-
-  if (coingeckoResult) {
-    console.log(`[fetchTokenPriceHistoryHA] ${asset.symbol} 从 CoinGecko 获取成功`);
-    return coingeckoResult;
-  }
-
-  console.error(`[fetchTokenPriceHistoryHA] ${asset.symbol} 所有数据源均失败`);
-  return null;
+  // 失败则尝试 CoinGecko
+  return await fetchFromCoinGecko(asset);
 }
 
 /**
- * 批量获取（使用 HA 版本）
+ * 完全并行批量获取历史价格
+ * 策略：所有代币同时发起请求，不等待批次
  */
-export async function fetchTokenPriceHistoriesHA(
-  assets: Asset[]
-): Promise<Record<string, TokenPriceHistory>> {
+export async function fetchTokenPriceHistoriesHABatched(
+  assets: Asset[],
+  _options?: { limit?: number }
+): Promise<Record<string, TokenPriceHistory | null>> {
   if (assets.length === 0) {
     return {};
   }
@@ -277,27 +175,37 @@ export async function fetchTokenPriceHistoriesHA(
     return {};
   }
 
-  console.log(`[fetchTokenPriceHistoriesHA] 批量获取 ${supportedAssets.length} 个代币`);
+  console.log(`[fetchTokenPriceHistoriesHABatched] 完全并行获取 ${supportedAssets.length} 个代币历史价格`);
 
-  // 串行获取避免触发速率限制
-  const histories: Record<string, TokenPriceHistory> = {};
-  let successCount = 0;
-  let failCount = 0;
-
-  for (const asset of supportedAssets) {
-    const history = await fetchTokenPriceHistoryHA(asset);
-    if (history) {
-      histories[asset.uniqueId] = history;
-      successCount++;
-    } else {
-      failCount++;
+  // 完全并行请求所有代币
+  const promises = supportedAssets.map(async (asset) => {
+    try {
+      const history = await fetchTokenPriceHistoryHA(asset);
+      return { uniqueId: asset.uniqueId, history };
+    } catch {
+      return { uniqueId: asset.uniqueId, history: null };
     }
-    // 添加小延迟避免请求过快
-    await new Promise(resolve => setTimeout(resolve, 100));
+  });
+
+  const startTime = Date.now();
+  const results = await Promise.allSettled(promises);
+  const elapsed = Date.now() - startTime;
+
+  const resultMap: Record<string, TokenPriceHistory | null> = {};
+  let successCount = 0;
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value.history) {
+      resultMap[result.value.uniqueId] = result.value.history;
+      if (result.value.history !== null) successCount++;
+    } else if (result.status === 'fulfilled') {
+      resultMap[result.value.uniqueId] = result.value.history;
+    }
   }
 
-  console.log(`[fetchTokenPriceHistoriesHA] 完成: 成功 ${successCount}, 失败 ${failCount}`);
-  return histories;
+  console.log(`[fetchTokenPriceHistoriesHABatched] 完成: ${successCount}/${supportedAssets.length} 成功，耗时 ${elapsed}ms`);
+
+  return resultMap;
 }
 
 // ============ 辅助函数 ============

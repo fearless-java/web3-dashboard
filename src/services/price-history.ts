@@ -1,30 +1,15 @@
-import type { Asset } from '@/types/assets';
-import { LLAMA_CHAIN_MAP, NATIVE_TOKEN_MAP } from '@/constants/chains';
+import type { Asset, TokenPriceHistory, PriceHistoryPoint } from '@/types';
+import { NATIVE_TOKEN_MAP } from '@/constants/chains';
 import { isTestnetChain } from '@/utils/asset-utils';
+import { getNetworkConfig } from '@/utils/network';
+
+export type { TokenPriceHistory, PriceHistoryPoint };
 
 // DefiLlama API 基础URL
 const DEFILLAMA_API_BASE = 'https://coins.llama.fi';
 
 // 历史价格缓存时间（6小时）
 const HISTORY_CACHE_TTL = 6 * 60 * 60 * 1000;
-
-/**
- * 历史价格数据点
- */
-export type PriceHistoryPoint = {
-  timestamp: number; // 秒级时间戳
-  price: number;
-};
-
-/**
- * 代币历史价格数据
- */
-export type TokenPriceHistory = {
-  symbol: string;
-  chainId: number;
-  address: string;
-  prices: PriceHistoryPoint[];
-};
 
 /**
  * DefiLlama 图表 API 响应类型
@@ -42,19 +27,20 @@ type DefiLlamaChartResponse = {
 /**
  * 检查资产是否支持历史价格查询
  * - 测试网不支持
- * - 链必须在 LLAMA_CHAIN_MAP 中
+ * - 链必须在配置中定义了 defiLlamaKey
  */
 function isAssetSupported(asset: Asset): boolean {
   // 过滤测试网
   if (isTestnetChain(asset.chainId)) {
     return false;
   }
-  
+
   // 检查链是否在映射中
-  if (!LLAMA_CHAIN_MAP[asset.chainId]) {
+  const networkConfig = getNetworkConfig(asset.chainId);
+  if (!networkConfig?.defiLlamaKey) {
     return false;
   }
-  
+
   return true;
 }
 
@@ -63,7 +49,8 @@ function isAssetSupported(asset: Asset): boolean {
  * 格式: <chain_name>:<token_address>
  */
 function assetToLlamaKey(asset: Asset): string | null {
-  const chainName = LLAMA_CHAIN_MAP[asset.chainId];
+  const networkConfig = getNetworkConfig(asset.chainId);
+  const chainName = networkConfig?.defiLlamaKey;
   if (!chainName) {
     return null;
   }
