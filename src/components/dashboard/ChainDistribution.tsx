@@ -55,8 +55,8 @@ function formatCurrency(value: number): string {
  */
 function formatPercentage(value: number): string {
   if (value < 0.01) return "<0.01%";
-  if (value < 1) return `${value.toFixed(2)}%`;
-  return `${Math.round(value)}%`;
+  if (value < 1) return `≈${value.toFixed(2)}%`;
+  return `≈${Math.round(value)}%`;
 }
 
 /**

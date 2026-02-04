@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { isAddress } from "viem";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useTrackedAddressStore } from "@/stores/tracked-address-store";
 
 /**
  * Dashboard view mode – single source of truth for "whose portfolio we are viewing".
@@ -45,15 +46,16 @@ export function useDashboardView(): UseDashboardViewReturn {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [mode, setMode] = useState<DashboardViewMode>("MY_PORTFOLIO");
-  const [trackedAddress, setTrackedAddress] = useState<string | null>(null);
+  // 使用持久化的 Store 替代本地 state，确保路由切换后状态不丢失
+  const { trackedAddress, setTrackedAddress, clearTrackedAddress } = useTrackedAddressStore();
 
-  // 从 URL 参数读取地址
+  // 从 URL 参数读取地址并同步到 Store
   useEffect(() => {
     const addressFromUrl = searchParams.get("address");
     if (addressFromUrl && isAddress(addressFromUrl)) {
       setTrackedAddress(addressFromUrl.toLowerCase());
     }
-  }, [searchParams]);
+  }, [searchParams, setTrackedAddress]);
 
   const activeAddress = useMemo((): string | undefined => {
     if (trackedAddress) {
@@ -68,7 +70,7 @@ export function useDashboardView(): UseDashboardViewReturn {
     const trimmed = input.trim();
     // Empty string - clear tracking
     if (!trimmed) {
-      setTrackedAddress(null);
+      clearTrackedAddress();
       return true;
     }
     // Validate address
@@ -78,7 +80,7 @@ export function useDashboardView(): UseDashboardViewReturn {
     const normalizedAddress = trimmed.toLowerCase();
     setTrackedAddress(normalizedAddress);
     return true;
-  }, []);
+  }, [setTrackedAddress, clearTrackedAddress]);
 
   return {
     mode,

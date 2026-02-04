@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useMemo } from "react";
+import React, { useRef, useMemo, useState, useEffect } from "react";
 import {
   AnimatePresence,
   motion,
@@ -46,6 +46,16 @@ export function BlurFade({
   const ref = useRef(null);
   const inViewResult = useInView(ref, { once: true, margin: inViewMargin });
   const isInView = !inView || inViewResult;
+  // 追踪动画是否已经执行过，避免重新聚焦时重新动画
+  const [hasAnimated, setHasAnimated] = useState(false);
+
+  // 当首次进入视口时标记动画已执行
+  useEffect(() => {
+    if (isInView && !hasAnimated) {
+      setHasAnimated(true);
+    }
+  }, [isInView, hasAnimated]);
+
   const defaultVariants: Variants = {
     hidden: {
       [direction === "left" || direction === "right" ? "x" : "y"]:
@@ -66,6 +76,16 @@ export function BlurFade({
     }
     return motion.create(Component);
   }, [Component]);
+
+  // 如果已经动画过，直接显示最终状态，不使用动画
+  if (hasAnimated) {
+    return (
+      <Component className={className} {...props}>
+        {children}
+      </Component>
+    );
+  }
+
   return (
     <AnimatePresence>
       <MotionComponent

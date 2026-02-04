@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -8,6 +8,7 @@ import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isAddress } from "viem";
 import { Logo } from "@/components/Logo";
+import { useTrackedAddressStore } from "@/stores/tracked-address-store";
 
 /**
  * Portal Layout 头部组件 - DeBank 风格
@@ -16,8 +17,18 @@ import { Logo } from "@/components/Logo";
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
+  const { trackedAddress, setTrackedAddress, clearTrackedAddress } = useTrackedAddressStore();
   const [addressInput, setAddressInput] = useState("");
   const [addressError, setAddressError] = useState(false);
+
+  // 与全局 Store 同步：组件挂载或 trackedAddress 变化时更新输入框
+  useEffect(() => {
+    if (trackedAddress) {
+      setAddressInput(trackedAddress);
+    } else {
+      setAddressInput("");
+    }
+  }, [trackedAddress]);
 
   const navItems = [
     { href: "/dashboard", label: "Assets" },
@@ -31,11 +42,14 @@ export function Header() {
     const trimmed = addressInput.trim();
     if (!trimmed) {
       setAddressError(false);
+      clearTrackedAddress();
       return;
     }
 
     if (isAddress(trimmed)) {
       setAddressError(false);
+      // 保存到全局 Store（持久化）
+      setTrackedAddress(trimmed.toLowerCase());
       // Navigate to dashboard with the tracked address
       router.push(`/dashboard?address=${trimmed}`);
     } else {
@@ -122,6 +136,7 @@ export function Header() {
                     onClick={() => {
                       setAddressInput("");
                       setAddressError(false);
+                      clearTrackedAddress();
                     }}
                     className="ml-2 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >

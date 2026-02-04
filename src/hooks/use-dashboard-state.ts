@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAccount } from "wagmi";
+import { useSearchParams, useRouter } from "next/navigation";
 import { dashboardConfig } from "@/config/dashboard.config";
 import { getNativeTokenLogo } from "@/utils/network";
 import { isTestnetChain } from "@/utils/asset-utils";
@@ -170,13 +171,80 @@ function convertGroupedAssetToDashboardAsset(
  * 核心策略：
  * 1. Top Assets (value >= $1): 立即加载完整数据（当前价格 + 历史价格）
  * 2. Small Assets (value < $1): 只加载当前价格，历史价格按需加载
+ * 
+ * UI 状态持久化：
+ * - 通过 URL 参数保存当前视图状态（链选择、测试网开关、小资产展开）
+ * - 页面切换后返回时自动恢复状态
  */
 export function useDashboardState(
   overrideAddress?: string | undefined,
 ): UseDashboardStateReturn {
-  const [selectedChain, setSelectedChain] = useState<string>("all");
-  const [showTestnets, setShowTestnets] = useState<boolean>(false);
-  const [smallAssetsExpanded, setSmallAssetsExpanded] = useState<boolean>(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // 从 URL 参数读取初始状态
+  const getInitialChain = () => searchParams.get("chain") || "all";
+  const getInitialShowTestnets = () => searchParams.get("testnets") === "true";
+  const getInitialExpanded = () => searchParams.get("expanded") === "true";
+
+  const [selectedChain, setSelectedChainState] = useState<string>(getInitialChain);
+  const [showTestnets, setShowTestnetsState] = useState<boolean>(getInitialShowTestnets);
+  const [smallAssetsExpanded, setSmallAssetsExpandedState] = useState<boolean>(getInitialExpanded);
+
+  // 同步 URL 参数变化到本地状态
+  useEffect(() => {
+    const chainFromUrl = searchParams.get("chain");
+    const testnetsFromUrl = searchParams.get("testnets");
+    const expandedFromUrl = searchParams.get("expanded");
+
+    if (chainFromUrl && chainFromUrl !== selectedChain) {
+      setSelectedChainState(chainFromUrl);
+    }
+    if (testnetsFromUrl !== null) {
+      const showTestnetsValue = testnetsFromUrl === "true";
+      if (showTestnetsValue !== showTestnets) {
+        setShowTestnetsState(showTestnetsValue);
+      }
+    }
+    if (expandedFromUrl !== null) {
+      const expandedValue = expandedFromUrl === "true";
+      if (expandedValue !== smallAssetsExpanded) {
+        setSmallAssetsExpandedState(expandedValue);
+      }
+    }
+  }, [searchParams]);
+
+  // 更新 URL 参数的辅助函数
+  const updateUrlParams = useCallback((updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === null || value === "" || value === "false") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    });
+
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+    router.replace(newUrl, { scroll: false });
+  }, [searchParams, router]);
+
+  // 包装状态设置函数，同步更新 URL
+  const setSelectedChain = useCallback((chainId: string) => {
+    setSelectedChainState(chainId);
+    updateUrlParams({ chain: chainId === "all" ? null : chainId });
+  }, [updateUrlParams]);
+
+  const setShowTestnets = useCallback((value: boolean) => {
+    setShowTestnetsState(value);
+    updateUrlParams({ testnets: value ? "true" : null });
+  }, [updateUrlParams]);
+
+  const setSmallAssetsExpanded = useCallback((value: boolean) => {
+    setSmallAssetsExpandedState(value);
+    updateUrlParams({ expanded: value ? "true" : null });
+  }, [updateUrlParams]);
 
   const { address: walletAddress, isConnected } = useAccount();
   const effectiveAddress = overrideAddress ?? walletAddress ?? undefined;
@@ -350,27 +418,20 @@ export function useDashboardState(
     };
   }, [topAssetsDashboard, smallAssetsDashboard]);
 
-  // 计算链资产分布（排除测试网）
-  // 使用 rawData 和最新的价格状态重新计算每个链的价值
   const chainDistribution = useMemo((): ChainDistributionInfo[] => {
-    const total = totalNetWorth || 1; // 避免除以0
+    const totalValue = aggregatedData
+      .filter((g) => !g.isTestnet)
+      .reduce((sum, g) => sum + g.totalValue, 0);
+    
+    const total = totalValue || 1;
     
     return ALL_CHAINS.filter(c => c.id !== 'all').map(chain => {
-      // 遍历原始资产数据，累加该链上各 token 的最新价值
-      const chainValue = rawData
-        .filter(asset => 
-          asset.chainId === chain.chainId && 
-          !isTestnetChain(asset.chainId)
-        )
-        .reduce((sum, asset) => {
-          // 使用最新价格重新计算价值
-          const priceState = getPriceState(asset.uniqueId);
-          if (priceState.status === 'success' && priceState.price > 0) {
-            const balance = parseFloat(asset.formatted) || 0;
-            return sum + (balance * priceState.price);
-          }
-          // 如果价格获取失败，使用原始 value（如果可用）
-          return sum + (asset.value ?? 0);
+      const chainValue = aggregatedData
+        .filter(group => !group.isTestnet)
+        .reduce((sum, group) => {
+          const chainAssets = group.assets.filter(asset => asset.chainId === chain.chainId);
+          const chainAssetValue = chainAssets.reduce((assetSum, asset) => assetSum + (asset.value ?? 0), 0);
+          return sum + chainAssetValue;
         }, 0);
       
       return {
@@ -378,8 +439,8 @@ export function useDashboardState(
         value: chainValue,
         percentage: (chainValue / total) * 100,
       };
-    }).sort((a, b) => b.value - a.value); // 按价值降序排列
-  }, [rawData, totalNetWorth, getPriceState]);
+    }).sort((a, b) => b.value - a.value);
+  }, [aggregatedData]);
 
   return {
     totalNetWorth,
